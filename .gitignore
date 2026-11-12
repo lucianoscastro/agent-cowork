@@ -1,0 +1,12 @@
+node_modules/
+data/
+env/*.env
+!env/example.env
+config/*.json
+!config/example.projects.json
+compose.yaml
+.env
+ui/dist/
+backups/
+e2e/.auth/
+e2e/test-results/

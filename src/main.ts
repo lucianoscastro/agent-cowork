@@ -1,0 +1,24 @@
+import { mkdirSync } from 'node:fs';
+import { startBackups } from './backup.ts';
+import { onInbox, openDb } from './db.ts';
+import { assertBootstrap, env } from './env.ts';
+import { applyGithubEnv } from './integrations/github.ts';
+import { prepareRuntimeHomes, startLimitRefresh } from './providers/index.ts';
+import { closeOrphanRuns } from './runs.ts';
+import { startScheduler } from './scheduler.ts';
+import { notifyInbox } from './notify.ts';
+import { startServer } from './server.ts';
+import { log } from './sh.ts';
+
+assertBootstrap();
+for (const dir of Object.values(env.paths)) mkdirSync(dir, { recursive: true });
+openDb(env.paths.db, env.secretKey);
+onInbox(notifyInbox);
+closeOrphanRuns();
+prepareRuntimeHomes();
+applyGithubEnv();
+startServer();
+startScheduler();
+startBackups();
+startLimitRefresh();
+log(`agentCowork "${env.instanceName}" started`);

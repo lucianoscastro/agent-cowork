@@ -1,0 +1,53 @@
+# Copy to compose.yaml (git-ignored) and adapt: one service per company/account, nothing shared between them.
+x-agent: &agent
+  image: ${IMAGE:-agent-cowork:local}
+  build: .
+  init: true
+  restart: unless-stopped
+  # Hardening: immutable image filesystem, no Linux capabilities, no privilege escalation.
+  # Writable: the volumes below plus tmpfs for /tmp and HOME.
+  read_only: true
+  tmpfs: ['/tmp:exec,size=2g', '/home/node:exec,uid=1000,gid=1000,size=1g']
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+
+# Shipped defaults (instructions, skills, prompts) are used unless you mount replacements under /overrides,
+# read-only, in a service's volumes. The admin UI shows which ones are custom. For example:
+#   - ./overrides/AGENTS.md:/overrides/AGENTS.md:ro
+#   - ./overrides/skills:/overrides/skills:ro
+#   - ./overrides/prompts/approver/review.md:/overrides/prompts/approver/review.md:ro
+
+services:
+  company-a:
+    <<: *agent
+    env_file: env/company-a.env # bootstrap only: admin login, secret key, instance name
+    ports: ['127.0.0.1:8081:8080']
+    volumes:
+      - company-a-db:/data/db # settings, runs, audit log, encrypted secrets (back it up)
+      - company-a-work:/data/work # clones, worktrees, package caches (rebuildable)
+      - company-a-auth:/data/auth # CLI account logins (sensitive, back it up)
+      - company-a-logs:/data/logs # run logs and transcripts (kept until deleted in the UI)
+      - ./backups/company-a:/backups # daily backups of db, auth and brains
+      - ./brain/company-a:/data/brain # project brains: Markdown vaults, open them in Obsidian (owned by uid 1000)
+
+  company-b:
+    <<: *agent
+    env_file: env/company-b.env
+    ports: ['127.0.0.1:8082:8080']
+    volumes:
+      - company-b-db:/data/db
+      - company-b-work:/data/work
+      - company-b-auth:/data/auth
+      - company-b-logs:/data/logs
+      - ./backups/company-b:/backups
+      - ./brain/company-b:/data/brain
+
+volumes:
+  company-a-db:
+  company-a-work:
+  company-a-auth:
+  company-a-logs:
+  company-b-db:
+  company-b-work:
+  company-b-auth:
+  company-b-logs:

@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+ui/dist
+data
+env
+config
+test
+docs
+compose*.yaml
+.env
+backups
+**/node_modules

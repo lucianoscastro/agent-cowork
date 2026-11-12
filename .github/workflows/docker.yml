@@ -1,0 +1,76 @@
+# Tests, publishes the image to Docker Hub and syncs its overview with the README.
+#
+# GitHub setup (Settings → Secrets and variables → Actions):
+#   secret DOCKERHUB_TOKEN — Docker Hub PAT with "Read, Write, Delete" scope
+#   (the API requires Delete to edit the repository description)
+#
+# Actions are pinned by SHA: a tag can be moved to malicious code, and this job
+# holds the token that publishes the image.
+name: docker
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: lucianoscastro/agent-cowork
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test
+        run: docker run --rm -v "$PWD:/src" -w /src node:26 sh -c 'npm ci && npm run typecheck && npm test'
+
+      # The server needs Node 26 (node:sqlite, type stripping), newer than the Playwright image's Node:
+      # Chromium is installed into the node:26 container instead. Reuses node_modules from the step above.
+      - name: End-to-end smoke tests
+        run: docker run --rm -e CI=true -v "$PWD:/src" -w /src node:26 sh -c 'npx playwright install --with-deps chromium && npm run build:ui && npm run test:e2e'
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          username: lucianoscastro
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Docker Hub overview = README
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+        with:
+          username: lucianoscastro
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE }}
+          short-description: Self-hosted AI agents for software teams, from Jira cards to reviewed pull requests.
+          readme-filepath: ./README.md

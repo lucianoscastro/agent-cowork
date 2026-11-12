@@ -1,0 +1,6 @@
+# CVEs the CVE badge ignores until the date, while upstream ships a fix. They still show in code scanning.
+# One line each: the ID, then exp:<date> when the exemption ends (the gate fails again from that day).
+
+# gh 2.103.3 bundles golang.org/x/net 0.61 (fix in 0.62): a DoS when parsing crafted HTML, not an RCE.
+# Drop this line once a gh release ships the fix.
+CVE-2026-78661 exp:2026-12-10

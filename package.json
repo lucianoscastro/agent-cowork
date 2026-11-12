@@ -1,0 +1,30 @@
+{
+  "name": "agent-cowork",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless Claude agent that reviews GitHub PRs and resolves Jira issues, one instance per company",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "dev:ui": "vite --config ui/vite.config.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc && tsc -p ui && tsc -p e2e",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7"
+  },
+  "license": "MIT"
+}
