@@ -158,11 +158,12 @@ async function handle(items: Items, key: string, project: Project, dryRun: boole
     items.watch(key, { project: project.name, prs, url: prs[0].url, title: key, summary: end.summary, handledUntil: new Date().toISOString(), rounds: 0 });
   } else if (end.status === 'done') items.done(key, { summary: end.summary });
   else if (end.status === 'waiting' || end.status === 'parked') {
-    items.wait(key, { project: project.name, reason: end.summary, waitingSince: end.data?.waitingSince ?? new Date().toISOString() });
+    // url and title: the Inbox links the card, where the answer goes.
+    items.wait(key, { project: project.name, url: jira.browseUrl(key), title: key, reason: end.summary, waitingSince: end.data?.waitingSince ?? new Date().toISOString() });
   } else if (end.status === 'killed') {
     items.stopped(key, { project: project.name, url: jira.browseUrl(key), title: key });
   } else {
-    items.fail(key, end.summary ?? end.status, { project: project.name });
+    items.fail(key, end.summary ?? end.status, { project: project.name, url: jira.browseUrl(key), title: key });
     if (!dryRun) {
       // The reason goes on the card: the next run reads the discussion, and a bare "failed" reads as the code's fault.
       const reason = (end.summary ?? '').split('\n')[0].slice(0, 300);

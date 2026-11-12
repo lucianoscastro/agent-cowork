@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import { api, clearSecret, saveSection, setSecret, type Sections, type SettingsResponse } from '../api';
-import { Badge, Button, Card, Field, Loading, Message, PageHeader, Text, useAction, useFetch, useUnsaved } from '../ui';
+import { Badge, Button, Card, Field, FoldCard, Loading, Message, PageHeader, Text, useAction, useFetch, useUnsaved } from '../ui';
 
 export function SecretInput({ name, label, hint, settings, reload }: { name: string; label: string; hint: string; settings: SettingsResponse; reload: () => void }) {
   const [value, setValue] = useState('');
@@ -54,7 +54,7 @@ export function Integrations() {
   return (
     <>
       <PageHeader title="GitHub and Jira" />
-      <Card title={<>GitHub {data.secrets['github.token'] ? <Badge tone="ok">token stored</Badge> : <Badge tone="warn">no token</Badge>}</>}>
+      <FoldCard open={!data.secrets['github.token']} title={<>GitHub {data.secrets['github.token'] ? <Badge tone="ok">token stored</Badge> : <Badge tone="warn">no token</Badge>}</>}>
         <p className="muted">
           {t('The GitHub user every agent acts as: it reviews and approves as this user, and opens and merges PRs as this user.')} {t('Token scopes:')}{' '}
           <code>repo</code>, <code>read:org</code> {t('(authorized for SSO if your organization uses it).')}
@@ -73,8 +73,16 @@ export function Integrations() {
           <Message message={g.message} />
         </div>
         <TestButton path="/test/github" />
-      </Card>
-      <Card title={<>Jira {data.secrets['jira.token'] ? <Badge tone="ok">token stored</Badge> : <Badge tone="muted">not set</Badge>}</>}>
+      </FoldCard>
+      <FoldCard
+        open={!data.secrets['jira.token']}
+        title={
+          <>
+            Jira {data.secrets['jira.token'] ? <Badge tone="ok">token stored</Badge> : <Badge tone="muted">not set</Badge>}{' '}
+            {jira.url && <span className="muted small">{jira.url.replace(/^https:\/\//, '')}</span>}
+          </>
+        }
+      >
         <p className="muted">
           {t('Used by the developer agent; each project sets its own board under Projects.')}{' '}
           {t('Create the API token at {path}.', { path: 'id.atlassian.com → Security → API tokens' })} <b>{t('Pick classic, not "with scopes".')}</b>
@@ -93,7 +101,7 @@ export function Integrations() {
         </div>
         <SecretInput name="jira.token" label="API token" hint="Stored encrypted; never shown again." settings={data} reload={reload} />
         <TestButton path="/test/jira" />
-      </Card>
+      </FoldCard>
     </>
   );
 }

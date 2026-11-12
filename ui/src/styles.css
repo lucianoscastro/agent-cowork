@@ -64,6 +64,7 @@ h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--fg); le
 .globalnav a.group:hover { color: #fff; text-decoration: none; }
 .globalnav a.group.active { color: #fff; background: rgba(255, 255, 255, 0.16); }
 .globalnav .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: #0071e3; color: #fff; font-size: 11px; font-weight: 600; text-align: center; line-height: 18px; }
+.globalnav .count.warn { background: #ff9f0a; color: #1d1d1f; }
 .globalnav .logout { margin-left: auto; background: none; border: 0; color: #d2d2d7; font: inherit; cursor: pointer; padding: 6px 10px; white-space: nowrap; }
 .globalnav .logout:hover { color: #fff; }
 .subnav { background: var(--subnav); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--line); position: sticky; top: 44px; z-index: 10; }
@@ -141,7 +142,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; min-width: 0; }
 .timeline { list-style: none; margin: 0; padding: 0; }
-.ev { display: grid; grid-template-columns: 80px 70px 1fr; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.ev { display: grid; grid-template-columns: 80px 84px 1fr; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
 .ev details { grid-column: 2 / -1; }
 .ev-time { color: var(--muted); font-size: 12px; }
 .ev-kind { font-size: 12px; font-weight: 600; }
@@ -149,10 +150,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .ev.error .ev-kind, .ev.error .ev-msg { color: var(--bad); }
 .ev.warn .ev-kind { color: var(--warn); }
 .ev.artifact .ev-kind { color: var(--ok); }
+.ev.switch .ev-msg { color: var(--warn); font-weight: 600; }
 pre { margin: 6px 0 0; }
 pre.log, .ev pre { background: var(--code); padding: 10px; border-radius: 8px; max-height: 480px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .accordion { margin-bottom: 12px; }
+.fold-title { font-size: 17px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .accordion > summary { cursor: pointer; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; list-style: none; }
 .accordion > summary::-webkit-details-marker { display: none; }
 .accordion > summary::before { content: '▸'; color: var(--muted); transition: transform 0.15s; }
@@ -173,6 +176,7 @@ pre.log, .ev pre { background: var(--code); padding: 10px; border-radius: 8px; m
 .sev-low { background: #2563EB; }
 .sev-info { background: var(--muted); }
 .row.tight { gap: 6px; align-items: center; }
+.row.nowrap { flex-wrap: nowrap; white-space: nowrap; }
 .finding { border-top: 1px solid var(--line); padding: 8px 0; }
 .finding > summary { cursor: pointer; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .finding-title { flex: 1; min-width: 200px; }
@@ -278,6 +282,9 @@ table.categories input[type=number] { width: 80px; }
 .needs-you { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 24px; }
 .needs-you .big { font-size: 34px; font-weight: 600; letter-spacing: -0.374px; margin: 0 0 4px; }
 .needs-you p { margin: 0; }
+/* Nothing waiting: one quiet line instead of a headline. */
+.needs-you.quiet { padding: 14px 24px; }
+.needs-you.quiet .big { font-size: 16px; letter-spacing: 0; margin: 0 0 2px; }
 .agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; }
 /* Home: one line of state per agent; what each agent does is on the Team page. */
 .agents-grid.compact { gap: 12px; }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type AgentId, api, type Run, type RunDetail } from '../api';
 import { useLocale, useT } from '../i18n';
-import { AGENT_NAMES, Badge, Button, Card, duration, Empty, Field, formatCost, formatTokens, Loading, Message, PAGE_SIZE, PageHeader, Pager, RunStatus, Select, Time, useAction, useFetch } from '../ui';
+import { AGENT_NAMES, Badge, Button, Card, duration, Empty, Field, formatCost, formatTokens, Loading, Message, PAGE_SIZE, PageHeader, Pager, RunStatus, Select, Time, type Tone, useAction, useFetch } from '../ui';
 
 export function Runs() {
   const t = useT();
@@ -172,6 +172,9 @@ function LiveTerminal({ id, running }: { id: number; running: boolean }) {
   );
 }
 
+/** The timeline's event kinds, colored like the rest of the UI. */
+const EVENT_TONES: Record<string, Tone> = { stage: 'info', error: 'bad', warn: 'warn', artifact: 'ok' };
+
 export function RunDetailPage({ id }: { id: number }) {
   const { locale } = useLocale();
   const t = useT();
@@ -222,15 +225,15 @@ export function RunDetailPage({ id }: { id: number }) {
           )}
         </dl>
       </Card>
-      <Card title={data.status === 'running' ? 'Live output' : 'Output'}>
-        <LiveTerminal id={id} running={data.status === 'running'} />
-      </Card>
       <Card title="Timeline">
         <ol className="timeline">
           {data.events.map((e, i) => (
-            <li key={i} className={`ev ${e.kind}`}>
+            // A provider switch ("…; trying codex") is an info event that reads as a warning.
+            <li key={i} className={`ev ${e.kind}${/; trying \w+$/.test(e.message) ? ' switch' : ''}`}>
               <span className="ev-time">{new Date(e.at).toLocaleTimeString(locale)}</span>
-              <span className="ev-kind">{e.kind}</span>
+              <span className="ev-kind">
+                <Badge tone={EVENT_TONES[e.kind] ?? 'muted'}>{e.kind}</Badge>
+              </span>
               <span className="ev-msg">{e.message}</span>
               {e.data != null && (
                 <details>
@@ -241,6 +244,9 @@ export function RunDetailPage({ id }: { id: number }) {
             </li>
           ))}
         </ol>
+      </Card>
+      <Card title={data.status === 'running' ? 'Live output' : 'Output'}>
+        <LiveTerminal id={id} running={data.status === 'running'} />
       </Card>
       <Card title="Logs and transcripts">
         {!files?.length ? (

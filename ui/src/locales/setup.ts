@@ -1,6 +1,9 @@
 /** The setup pages (projects, test environment, accounts, runtimes, general, instructions) and the login. Shape: Translations in i18n.tsx (no import, so the server's tests can load this file as it is). */
 const translations = {
   'pt-BR': {
+    'account not logged in': 'conta não conectada',
+    'no API key set': 'nenhuma API key salva',
+    'usage limit reached, paused until': 'limite de uso atingido, pausado até',
     'No project yet: add one to link a Jira board to its repositories.': 'Nenhum projeto ainda: adicione um para ligar um board do Jira aos repositórios dele.',
     // Projects
     'Remove this project? Its agents stop working on it.': 'Remover este projeto? Os agentes param de trabalhar nele.',
@@ -155,6 +158,9 @@ const translations = {
     'Instructions, prompts and skills': 'Instruções, prompts e skills',
   },
   'es-ES': {
+    'account not logged in': 'cuenta no conectada',
+    'no API key set': 'ninguna API key guardada',
+    'usage limit reached, paused until': 'límite de uso alcanzado, en pausa hasta',
     'No project yet: add one to link a Jira board to its repositories.': 'Aún no hay proyectos: añade uno para vincular un tablero de Jira con sus repositorios.',
     // Projects
     'Remove this project? Its agents stop working on it.': '¿Quitar este proyecto? Sus agentes dejan de trabajar en él.',

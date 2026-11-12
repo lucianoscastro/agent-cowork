@@ -60,26 +60,31 @@ function Meter({ w }: { w: Window }) {
 }
 
 /** Each provider's account limits as its last run reported them, and any pause after a limit was hit. */
-export function LimitsCard({ limits, accounts, onChange }: { limits: Limits; accounts: Accounts; onChange: () => void }) {
+/** compact (Home): only the providers connected or with reported limits, and a link to Usage. */
+export function LimitsCard({ limits, accounts, onChange, compact }: { limits: Limits; accounts: Accounts; onChange: () => void; compact?: boolean }) {
   const t = useT();
   const action = useAction();
   const blocked = (l: ProviderLimits) => Boolean(l?.limitedUntil && Date.parse(l.limitedUntil) > Date.now());
   const paused = (Object.keys(PROVIDER_NAMES) as (keyof typeof PROVIDER_NAMES)[]).filter((id) => blocked(limits[id]));
   // One button lifts every pause at once.
   const retryAll = () => Promise.all(paused.map((id) => api(`/providers/${id}/limits/clear`, { method: 'POST' })));
+  const shown = (Object.keys(PROVIDER_NAMES) as (keyof typeof PROVIDER_NAMES)[]).filter((id) => !compact || limits[id] || accounts[id]);
   return (
     <Card
       title="Account limits"
       actions={
-        paused.length > 0 && (
+        paused.length > 0 ? (
           <Button busy={action.busy} onClick={() => action.run(retryAll, 'Agents will try again now').then(onChange)}>
             Try again now
           </Button>
+        ) : (
+          compact && <a href="#/usage">{t('Usage')}</a>
         )
       }
     >
+      {!shown.length && <Empty>No runtime connected yet.</Empty>}
       <div className="limits">
-        {(Object.keys(PROVIDER_NAMES) as (keyof typeof PROVIDER_NAMES)[]).map((id) => {
+        {shown.map((id) => {
           const l = limits[id];
           const a = accounts[id];
           // Same identity the Accounts page shows: the email, else the API key's last characters.

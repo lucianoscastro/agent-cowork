@@ -1,6 +1,9 @@
 /** The Agents pages (team grid, one agent's overview and settings). Shape: Translations in i18n.tsx (no import, so the server's tests can load this file as it is). */
 const translations = {
   'pt-BR': {
+    Switches: 'Controles',
+    'Take {agent} live? It will write to GitHub and Jira as the configured users.': 'Colocar o {agent} em produção? Ele vai escrever no GitHub e no Jira com os usuários configurados.',
+    '{n} agents need attention': '{n} agentes precisam de atenção',
     'Turn it on in Settings': 'Ative em Configurações',
     'GitHub token not set': 'Token do GitHub não configurado',
     'No project has a Jira board': 'Nenhum projeto tem um board do Jira',
@@ -135,6 +138,9 @@ const translations = {
     'Changes apply on the next poll.': 'As mudanças valem a partir da próxima verificação.',
   },
   'es-ES': {
+    Switches: 'Interruptores',
+    'Take {agent} live? It will write to GitHub and Jira as the configured users.': '¿Poner {agent} en producción? Escribirá en GitHub y Jira con los usuarios configurados.',
+    '{n} agents need attention': '{n} agentes necesitan atención',
     'Turn it on in Settings': 'Actívalo en Configuración',
     'GitHub token not set': 'Token de GitHub no configurado',
     'No project has a Jira board': 'Ningún proyecto tiene un tablero de Jira',

@@ -24,6 +24,9 @@ export function useUnsaved(draft: unknown, saved: unknown) {
 }
 
 /** Fetches a path, optionally re-fetching every `refreshMs` while the page is open. */
+/** An agent someone turned on that is not working: off for a reason, paused at a limit, or failing its poll. */
+export const needsAttention = (a: { on: boolean; reason?: string; lastError: unknown }) => (!a.on && a.reason !== 'Disabled') || (a.on && Boolean(a.lastError));
+
 export function useFetch<T>(path: string | null, refreshMs?: number) {
   const [data, setData] = useState<T | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -78,6 +81,27 @@ export function RunStatus({ status }: { status: Run['status'] }) {
   const tone: Record<Run['status'], Tone> = { running: 'info', done: 'ok', failed: 'bad', killed: 'bad', parked: 'warn', waiting: 'warn' };
   return <Badge tone={tone[status]}>{status}</Badge>;
 }
+
+/**
+ * A card that folds to its title line: starts open when `open` (e.g. not set up yet), then the person decides.
+ * The initial state only: saving inside it does not snap it shut.
+ */
+export function FoldCard({ title, open, children }: { title: ReactNode; open: boolean; children: ReactNode }) {
+  const t = useT();
+  const [isOpen, setOpen] = useState(open);
+  return (
+    <details className="card accordion" open={isOpen} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        <span className="fold-title">{tr(t, title)}</span>
+      </summary>
+      {children}
+    </details>
+  );
+}
+
+/** Provider reasons from the server (English), with the known phrases translated: "claude: account not logged in". */
+const REASON_PHRASES = ['account not logged in', 'no API key set', 'usage limit reached, paused until'];
+export const reasonText = (t: T, reason = ''): string => REASON_PHRASES.reduce((s, p) => s.replace(p, t(p)), t(reason));
 
 export function Card({ title, actions, children }: { title?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   const t = useT();
@@ -307,6 +331,7 @@ export function ModelInput({
   onChange,
   placeholder = 'provider default',
   connection = '',
+  ready = true,
 }: {
   provider: ProviderId;
   value: string;
@@ -314,11 +339,14 @@ export function ModelInput({
   placeholder?: string;
   /** Changes when the account is connected again (e.g. its connection date), so the list is fetched anew. */
   connection?: string;
+  /** False while the provider is not connected: no model list to ask for, so no error to show. */
+  ready?: boolean;
 }) {
   const t = useT();
   const listId = useId();
   const [list, setList] = useState<ModelList>();
   useEffect(() => {
+    if (!ready) return setList(undefined);
     const key = `${provider}:${connection}`;
     if (!modelLists.has(key)) {
       const fetching = api<ModelList>(`/providers/${provider}/models`).catch((e) => ({ models: [], error: (e as Error).message }));
@@ -331,7 +359,7 @@ export function ModelInput({
     return () => {
       live = false;
     };
-  }, [provider, connection]);
+  }, [provider, connection, ready]);
   return (
     <>
       <input list={listId} value={value} placeholder={t(placeholder)} onChange={(e) => onChange(e.target.value)} />

@@ -1,5 +1,5 @@
 import { api, type Overview, type SettingsResponse } from '../api';
-import { AGENT_NAMES, Badge, Button, Card, duration, Empty, Loading, RunStatus, Time, useFetch } from '../ui';
+import { AGENT_NAMES, Badge, reasonText, Button, Card, duration, Empty, Loading, RunStatus, Time, useFetch } from '../ui';
 import { useT } from '../i18n';
 import { type Accounts, type Limits, LimitsCard } from './Usage';
 
@@ -29,7 +29,22 @@ export function Home() {
         <span className="muted">{data.running.length ? t('{n} running now', { n: data.running.length }) : t('Nothing running now')}</span>
       </header>
 
-      <section className="card needs-you">
+      {steps.some((s) => !s.done) && (
+        <Card title="Set up">
+          <ol className="checklist">
+            {steps.map((s) => (
+              <li key={s.text}>
+                <span className={`mark ${s.done ? 'ok' : 'muted'}`} aria-label={s.done ? t('done') : t('to do')}>
+                  {s.done ? '✓' : '○'}
+                </span>
+                {s.done ? <span className="muted">{t(s.text)}</span> : <a href={s.href}>{t(s.text)}</a>}
+              </li>
+            ))}
+          </ol>
+        </Card>
+      )}
+
+      <section className={`card needs-you${data.inbox ? '' : ' quiet'}`}>
         <div>
           <p className="big">{data.inbox ? t('{count} waiting for you', { count: data.inbox }) : t('Nothing needs you')}</p>
           <p className="muted">
@@ -45,20 +60,6 @@ export function Home() {
         )}
       </section>
 
-      {steps.some((s) => !s.done) && (
-        <Card title="Set up">
-          <ol className="checklist">
-            {steps.map((s) => (
-              <li key={s.text}>
-                <span className={`mark ${s.done ? 'ok' : 'muted'}`} aria-label={s.done ? t('done') : t('to do')}>
-                  {s.done ? '✓' : '○'}
-                </span>
-                {s.done ? <span className="muted">{t(s.text)}</span> : <a href={s.href}>{t(s.text)}</a>}
-              </li>
-            ))}
-          </ol>
-        </Card>
-      )}
 
       {data.running.length > 0 && (
         <Card title="Running now">
@@ -105,7 +106,7 @@ export function Home() {
                   {a.on && (data.live.includes(a.id) ? <Badge tone="warn">live</Badge> : <Badge tone="muted">dry run</Badge>)}
                 </span>
               </h2>
-              {!a.on && a.reason !== 'Disabled' && <p className="why">{t(a.reason ?? '')}</p>}
+              {!a.on && a.reason !== 'Disabled' && <p className="why">{reasonText(t, a.reason)}</p>}
               {a.on && a.lastError && <p className="why">{t('Last poll failed: {error}', { error: a.lastError.message })}</p>}
               <p className="when">
                 {t('Last poll')} <Time iso={a.lastPoll} />
@@ -141,7 +142,7 @@ export function Home() {
           </table>
         )}
       </Card>
-      {usage && <LimitsCard limits={usage.limits} accounts={usage.accounts} onChange={reloadUsage} />}
+      {usage && <LimitsCard limits={usage.limits} accounts={usage.accounts} onChange={reloadUsage} compact />}
     </>
   );
 }

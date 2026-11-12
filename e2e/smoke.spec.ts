@@ -56,7 +56,7 @@ test.describe('phone', () => {
 
     await toggle.click();
     const menu = page.locator('#mobile-menu');
-    for (const group of ['Home', 'Work', 'Team', 'Setup', 'History']) await expect(menu.getByRole('link', { name: group, exact: true })).toBeVisible();
+    for (const group of ['Home', 'Work', 'Team', 'Setup']) await expect(menu.getByRole('link', { name: group, exact: true })).toBeVisible();
     await expect(menu.getByRole('button', { name: `Log out ${ADMIN.username}` })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
@@ -64,7 +64,7 @@ test.describe('phone', () => {
 
 test('leaving a settings form with unsaved changes asks first', async ({ page }) => {
   await page.goto('/#/agents/developer/settings');
-  const box = page.locator('main .card').getByRole('checkbox', { name: 'Enabled' });
+  const box = page.locator('main .card').getByRole('checkbox', { name: 'First reviewer' });
   const before = await box.isChecked();
   await box.click();
 

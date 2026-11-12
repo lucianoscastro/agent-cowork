@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { type AgentId, api, AUDIT_CATEGORIES, type ModelChoice, type Overview, type ProviderId, type Run, saveSection, type Sections, type SettingsResponse } from '../api';
-import { AGENT_NAMES, AGENT_SUMMARY, Badge, Button, Card, Embedded, Empty, Field, Loading, Message, ModelInput, Num, PROVIDER_NAMES, RunStatus, Select, Tabs, Text, Time, Toggle, useAction, useFetch, useUnsaved } from '../ui';
+import { AGENT_NAMES, AGENT_SUMMARY, Badge, Button, Card, Embedded, Empty, Field, Loading, Message, ModelInput, needsAttention, Num, PROVIDER_NAMES, reasonText, RunStatus, Select, Tabs, Text, Time, Toggle, useAction, useFetch, useUnsaved } from '../ui';
 import { useT } from '../i18n';
 import { Assets } from './Assets';
 
@@ -9,14 +9,15 @@ const providerOptions = (Object.keys(PROVIDER_NAMES) as ProviderId[]).map((p) =>
 const modelLabel = (c: ModelChoice) => `${PROVIDER_NAMES[c.provider]}${c.model ? ` · ${c.model}` : ''}`;
 
 function ModelPicker({ value, onChange, settings }: { value: ModelChoice; onChange: (v: ModelChoice) => void; settings: SettingsResponse }) {
+  const t = useT();
   const status = settings.providers[value.provider];
   return (
     <div className="row fields">
-      <Field label="Provider" hint={status.ready ? 'Ready' : status.reason}>
+      <Field label="Provider" hint={status.ready ? 'Ready' : reasonText(t, status.reason)}>
         <Select value={value.provider} onChange={(provider) => onChange({ ...value, provider })} options={providerOptions} />
       </Field>
       <Field label="Model" hint={MODEL_HINT}>
-        <ModelInput provider={value.provider} value={value.model} onChange={(model) => onChange({ ...value, model })} />
+        <ModelInput provider={value.provider} value={value.model} onChange={(model) => onChange({ ...value, model })} ready={status.ready} />
       </Field>
     </div>
   );
@@ -89,8 +90,6 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'developer':
       return (
         <Card>
-          <Toggle checked={developer.enabled} onChange={(enabled) => setDeveloper({ ...developer, enabled })} label="Enabled" />
-          <Toggle checked={developer.dryRun} onChange={(dryRun) => setDeveloper({ ...developer, dryRun })} label="Dry run (writes nothing to GitHub or Jira)" />
           <div className="row fields">
             <Field label="Cards in parallel" hint="Across all projects, the same project included. Each card has its own checkout and branch.">
               <Num value={developer.concurrency} min={1} max={4} onChange={(concurrency) => setDeveloper({ ...developer, concurrency })} />
@@ -179,8 +178,6 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'documenter':
       return (
         <Card>
-          <Toggle checked={documenter.enabled} onChange={(enabled) => setDocumenter({ ...documenter, enabled })} label="Enabled" />
-          <Toggle checked={documenter.dryRun} onChange={(dryRun) => setDocumenter({ ...documenter, dryRun })} label="Dry run (writes nothing to GitHub or Jira)" />
           <ModelPicker value={documenter} onChange={(v) => setDocumenter({ ...documenter, ...v })} settings={settings} />
           <div className="row fields">
             <Field label="Docs folder" hint="Inside each repository; the agent writes only there and the platform reverts anything else. Other files in it are kept.">
@@ -199,8 +196,6 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'approver':
       return (
         <Card>
-          <Toggle checked={approver.enabled} onChange={(enabled) => setApprover({ ...approver, enabled })} label="Enabled" />
-          <Toggle checked={approver.dryRun} onChange={(dryRun) => setApprover({ ...approver, dryRun })} label="Dry run (writes nothing to GitHub or Jira)" />
           <ModelPicker value={approver} onChange={(v) => setApprover({ ...approver, ...v })} settings={settings} />
           <Field label="Reviews in parallel">
             <Num value={approver.concurrency} min={1} max={8} onChange={(concurrency) => setApprover({ ...approver, concurrency })} />
@@ -211,8 +206,6 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'dependabot':
       return (
         <Card>
-          <Toggle checked={dependabot.enabled} onChange={(enabled) => setDependabot({ ...dependabot, enabled })} label="Enabled" />
-          <Toggle checked={dependabot.dryRun} onChange={(dryRun) => setDependabot({ ...dependabot, dryRun })} label="Dry run (writes nothing to GitHub or Jira)" />
           <ModelPicker value={dependabot} onChange={(v) => setDependabot({ ...dependabot, ...v })} settings={settings} />
           <div className="row fields">
             <Field label="Cooldown (days)" hint="Merge only releases at least this old.">
@@ -273,8 +266,6 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'sentinel':
       return (
         <Card>
-          <Toggle checked={sentinel.enabled} onChange={(enabled) => setSentinel({ ...sentinel, enabled })} label="Enabled" />
-          <Toggle checked={sentinel.dryRun} onChange={(dryRun) => setSentinel({ ...sentinel, dryRun })} label="Dry run (writes nothing to GitHub or Jira)" />
           <ModelPicker value={sentinel} onChange={(v) => setSentinel({ ...sentinel, ...v })} settings={settings} />
           <p className="hint">{t('The browser tools need Claude Code as the provider.')}</p>
           <div className="row fields">
@@ -291,8 +282,6 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'auditor':
       return (
         <Card>
-          <Toggle checked={auditor.enabled} onChange={(enabled) => setAuditor({ ...auditor, enabled })} label="Enabled" />
-          <Toggle checked={auditor.dryRun} onChange={(dryRun) => setAuditor({ ...auditor, dryRun })} label="Dry run (writes nothing to GitHub or Jira)" />
           <table className="categories">
             <thead>
               <tr>
@@ -355,7 +344,8 @@ export function TeamPage() {
         {t('An agent runs only when it is enabled and everything it needs is configured.')} {t(DRY_RUN_NOTE)}
       </p>
       <div className="agents-grid">
-        {data.agents.map((a) => (
+        {/* The ones that need attention first; sort is stable, so the rest keep their order. */}
+        {[...data.agents].sort((x, y) => Number(needsAttention(y)) - Number(needsAttention(x))).map((a) => (
           <a key={a.id} href={`#/agents/${a.id}`} className="card agent-card">
             <h2>
               {AGENT_NAMES[a.id]}
@@ -366,7 +356,8 @@ export function TeamPage() {
               </span>
             </h2>
             <p className="what">{t(AGENT_SUMMARY[a.id])}</p>
-            {!a.on && a.reason !== 'Disabled' && <p className="why">{t(a.reason ?? '')}</p>}
+            {!a.on && a.reason !== 'Disabled' && <p className="why">{reasonText(t, a.reason)}</p>}
+            {a.on && a.lastError && <p className="why">{t('Last poll failed: {error}', { error: a.lastError.message })}</p>}
             <p className="when">
               {t('Last poll')} <Time iso={a.lastPoll} />
             </p>
@@ -388,10 +379,21 @@ const RUN_NOW: Record<AgentId, string> = {
   documenter: 'Documenting every repository now, whatever its interval or last commit.',
 };
 
-function AgentOverview({ id, overview, reload }: { id: AgentId; overview: Overview; reload: () => Promise<void> }) {
+function AgentOverview({ id, overview, reload, settings, reloadSettings }: { id: AgentId; overview: Overview; reload: () => Promise<void>; settings: SettingsResponse; reloadSettings: () => Promise<void> }) {
   const t = useT();
   const a = overview.agents.find((x) => x.id === id)!;
   const runNow = useAction();
+  const switches = useAction();
+  const key = `agents.${id}` as const;
+  const section = settings.sections[key];
+  // On and dry run live here, where the state is read: saved at once, going live asks first.
+  const change = (patch: { enabled?: boolean; dryRun?: boolean }) => {
+    if (patch.dryRun === false && !window.confirm(t('Take {agent} live? It will write to GitHub and Jira as the configured users.', { agent: AGENT_NAMES[id] }))) return;
+    void switches.run(async () => {
+      await saveSection(key, { ...section, ...patch } as typeof section);
+      await Promise.all([reload(), reloadSettings()]);
+    }, 'Saved');
+  };
   const { data: runs } = useFetch<Run[]>(`/runs?agent=${id}&limit=10`, 10_000);
   const { data: inbox } = useFetch<{ agent: AgentId }[]>('/inbox', 30_000);
   const waiting = inbox?.filter((i) => i.agent === id).length ?? 0;
@@ -401,15 +403,14 @@ function AgentOverview({ id, overview, reload }: { id: AgentId; overview: Overvi
         <dl className="facts">
           <dt>{t('Status')}</dt>
           <dd>
-            <StateBadge a={a} />{' '}
-            {a.reason === 'Disabled' ? (
-              <a href={`#/agents/${id}/settings`}>{t('Turn it on in Settings')}</a>
-            ) : (
-              !a.on && <span className="reason inline">{t(a.reason ?? '')}</span>
-            )}
+            <StateBadge a={a} /> {!a.on && a.reason !== 'Disabled' && <span className="reason inline">{reasonText(t, a.reason)}</span>}
           </dd>
-          <dt>{t('Mode')}</dt>
-          <dd>{overview.live.includes(id) ? <Badge tone="warn">live: writes to GitHub and Jira</Badge> : <Badge tone="muted">dry run</Badge>}</dd>
+          <dt>{t('Switches')}</dt>
+          <dd className="row tight">
+            <Toggle checked={section.enabled} disabled={switches.busy} onChange={(enabled) => change({ enabled })} label="Enabled" />
+            <Toggle checked={section.dryRun} disabled={switches.busy} onChange={(dryRun) => change({ dryRun })} label="Dry run (writes nothing to GitHub or Jira)" />
+            <Message message={switches.message} />
+          </dd>
           <dt>{t('Last poll')}</dt>
           <dd>
             <Time iso={a.lastPoll} />
@@ -505,7 +506,11 @@ export function AgentPage({ id, tab }: { id: AgentId; tab: string }) {
           {overview.live.includes(id) ? <Badge tone="warn">live</Badge> : <Badge tone="muted">dry run</Badge>}
         </span>
       </header>
-      <p className="lead">{t(DESCRIPTIONS[id])}</p>
+      <p className="lead">{t(AGENT_SUMMARY[id])}</p>
+      <details className="fold">
+        <summary>{t('How it works')}</summary>
+        <p className="muted">{t(DESCRIPTIONS[id])}</p>
+      </details>
       <Tabs
         base={`agents/${id}`}
         current={tab}
@@ -527,7 +532,7 @@ export function AgentPage({ id, tab }: { id: AgentId; tab: string }) {
           <Assets only={`prompts/${id}/`} />
         </Embedded.Provider>
       ) : (
-        <AgentOverview id={id} overview={overview} reload={reloadOverview} />
+        <AgentOverview id={id} overview={overview} reload={reloadOverview} settings={settings} reloadSettings={reload} />
       )}
     </>
   );

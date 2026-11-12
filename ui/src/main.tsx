@@ -16,20 +16,29 @@ import { RunDetailPage, Runs } from './pages/Runs';
 import { Usage } from './pages/Usage';
 import { LanguagePicker, LocaleProvider, useT } from './i18n';
 import { applyTheme, ThemeToggle } from './theme';
-import { AGENT_NAMES, hasUnsaved, useFetch } from './ui';
+import { AGENT_NAMES, hasUnsaved, needsAttention, useFetch } from './ui';
 import './styles.css';
 
 /** The groups of the global nav and the pages of each, in the frosted sub-nav. */
 const GROUPS = [
   { id: 'home', label: 'Home', pages: [{ path: '', label: 'Today' }] },
-  { id: 'work', label: 'Work', pages: [{ path: 'inbox', label: 'Inbox' }, { path: 'runs', label: 'Runs' }, { path: 'findings', label: 'Findings' }, { path: 'brain', label: 'Brain' }] },
+  {
+    id: 'work',
+    label: 'Work',
+    pages: [{ path: 'inbox', label: 'Inbox' }, { path: 'runs', label: 'Runs' }, { path: 'findings', label: 'Findings' }, { path: 'brain', label: 'Brain' }, { path: 'usage', label: 'Usage' }],
+  },
   { id: 'team', label: 'Team', pages: [{ path: 'agents', label: 'All agents' }, ...(Object.keys(AGENT_NAMES) as AgentId[]).map((id) => ({ path: `agents/${id}`, label: AGENT_NAMES[id] }))] },
   {
     id: 'setup',
     label: 'Setup',
-    pages: [{ path: 'projects', label: 'Projects' }, { path: 'accounts', label: 'Accounts' }, { path: 'general', label: 'General' }, { path: 'instructions', label: 'Instructions' }],
+    pages: [
+      { path: 'projects', label: 'Projects' },
+      { path: 'accounts', label: 'Accounts' },
+      { path: 'general', label: 'General' },
+      { path: 'instructions', label: 'Instructions' },
+      { path: 'activity', label: 'Activity' },
+    ],
   },
-  { id: 'history', label: 'History', pages: [{ path: 'usage', label: 'Usage' }, { path: 'activity', label: 'Activity' }] },
 ] as const;
 
 /** Old addresses (bookmarks, links in reports) keep working. */
@@ -149,6 +158,7 @@ function Shell({ me, onLogout }: { me: { user: string; instance: string }; onLog
     if (active && bar) bar.scrollLeft = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
   }, [path]);
   const inbox = data?.inbox ?? 0;
+  const attention = data?.agents.filter(needsAttention).length ?? 0;
   const groupLinks = (className: string) =>
     GROUPS.map((g) => (
       <a key={g.id} href={`#/${g.pages[0].path}`} className={`${className}${g.id === group.id ? ' active' : ''}`} aria-current={g.id === group.id ? 'page' : undefined}>
@@ -156,6 +166,11 @@ function Shell({ me, onLogout }: { me: { user: string; instance: string }; onLog
         {g.id === 'work' && inbox > 0 && (
           <span className="count" aria-label={t('{count} waiting for you', { count: inbox })}>
             {inbox}
+          </span>
+        )}
+        {g.id === 'team' && attention > 0 && (
+          <span className="count warn" aria-label={t('{n} agents need attention', { n: attention })}>
+            {attention}
           </span>
         )}
       </a>

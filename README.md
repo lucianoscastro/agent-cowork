@@ -121,11 +121,10 @@ To replace any of them, mount your own file or folder read-only at the same path
 
 | Group | Pages | Purpose |
 | --- | --- | --- |
-| Home | Today | What waits for you, a setup checklist until the instance is ready, each agent's state and why it is off, account limits, running and recent runs |
-| Work | Inbox · Runs · Findings | What needs a decision; run history with timelines, logs, transcripts and cleanup; audit findings over time |
-| Team | One page per agent | Overview (state, Run now, Stop, last runs, its inbox), Settings, and its Prompts (read-only) |
-| Setup | Projects · Accounts · General · Instructions | Repositories and test environments; GitHub, Jira and the agent runtimes; defaults; the shipped instructions, prompts and skills (read-only) |
-| History | Usage · Activity | Account limits, tokens and cost; audit log and recent server logs |
+| Home | Today | A setup checklist until the instance is ready, what waits for you, what runs, each agent's state and why it is off, recent runs, account limits |
+| Work | Inbox · Runs · Findings · Brain · Usage | What needs a decision, with its action on each row; run history with timelines, logs, transcripts and cleanup; audit findings over time; what agents learned per project; account limits, tokens and cost |
+| Team | One page per agent | Overview (state, on and dry run switches, Run now, Stop, last runs, its inbox), Settings, and its Prompts (read-only); the nav counts agents that are on but not working |
+| Setup | Projects · Accounts · General · Instructions · Activity | Repositories and test environments; GitHub, Jira and the agent runtimes (folded once connected); defaults; the shipped instructions, prompts and skills (read-only); audit log and recent server logs |
 
 A bar under the navigation names the agents that are live (writing to GitHub and Jira) on every page.
 

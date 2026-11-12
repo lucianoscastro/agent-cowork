@@ -13,6 +13,14 @@ const KINDS = {
   failed: 'Out of retries',
 } as const;
 
+/** The row's main action: where the decision is made (the card, the PR, the report). */
+function openLabel(item: InboxItem, url: string): string {
+  if (url.startsWith('#')) return 'Open report';
+  if (item.status === 'waiting') return 'Answer on the card';
+  if (/\/pull\/\d+/.test(url)) return 'Open PR';
+  return 'Open';
+}
+
 /** Long reasons (review findings, audit summaries) show their first line; the rest opens on click. */
 function Reason({ text }: { text: string }) {
   const [first, ...rest] = text.split('\n');
@@ -57,9 +65,9 @@ export function Inbox() {
   const filter = <T,>(set: (v: T) => void) => (v: T) => (set(v), setPage(0));
   const toggle = (id: string) => setSelected((s) => (s.has(id) ? (s.delete(id), new Set(s)) : new Set(s.add(id))));
 
-  const remove = async () => {
-    const chosen = all.filter((i) => selected.has(idOf(i)));
-    if (!window.confirm(t('Remove {n} item(s) from the inbox? Their agents stop handling them (see above).', { n: chosen.length }))) return;
+  const remove = async (only?: InboxItem) => {
+    const chosen = only ? [only] : all.filter((i) => selected.has(idOf(i)));
+    if (!window.confirm(t('Remove {n} item(s) from the inbox? Their agents stop waiting on the card, following the PR or retrying them.', { n: chosen.length }))) return;
     await action.run(async () => {
       await api('/inbox/dismiss', { method: 'POST', body: { items: chosen.map(({ agent, key, dryRun }) => ({ agent, key, dryRun })) } });
       setSelected(new Set());
@@ -82,33 +90,35 @@ export function Inbox() {
         </p>
       </details>
       <Card>
-        <div className="row filters">
-          <Field label="Agent">
-            <Select
-              value={agent}
-              onChange={filter(setAgentFilter)}
-              options={[{ value: '', label: 'All' }, ...Object.entries(AGENT_NAMES).map(([value, label]) => ({ value: value as AgentId, label }))]}
-            />
-          </Field>
-          <Field label="Why">
-            <Select
-              value={kind}
-              onChange={filter(setKindFilter)}
-              options={[{ value: '', label: 'All' }, ...Object.entries(KINDS).map(([value, label]) => ({ value: value as InboxItem['status'], label }))]}
-            />
-          </Field>
-          <Field label="Mode">
-            <Select
-              value={mode}
-              onChange={filter(setModeFilter)}
-              options={[{ value: '', label: 'All' }, { value: 'live', label: 'Live' }, { value: 'dry', label: 'Dry run' }]}
-            />
-          </Field>
-          <span className="spacer" />
-          <Button variant="danger" disabled={selected.size === 0} busy={action.busy} onClick={remove}>
-            {t('Remove selected ({n})', { n: selected.size })}
-          </Button>
-        </div>
+        {(data?.length ?? 0) > 0 && (
+          <div className="row filters">
+            <Field label="Agent">
+              <Select
+                value={agent}
+                onChange={filter(setAgentFilter)}
+                options={[{ value: '', label: 'All' }, ...Object.entries(AGENT_NAMES).map(([value, label]) => ({ value: value as AgentId, label }))]}
+              />
+            </Field>
+            <Field label="Why">
+              <Select
+                value={kind}
+                onChange={filter(setKindFilter)}
+                options={[{ value: '', label: 'All' }, ...Object.entries(KINDS).map(([value, label]) => ({ value: value as InboxItem['status'], label }))]}
+              />
+            </Field>
+            <Field label="Mode">
+              <Select
+                value={mode}
+                onChange={filter(setModeFilter)}
+                options={[{ value: '', label: 'All' }, { value: 'live', label: 'Live' }, { value: 'dry', label: 'Dry run' }]}
+              />
+            </Field>
+            <span className="spacer" />
+            <Button variant="danger" disabled={selected.size === 0} busy={action.busy} onClick={() => remove()}>
+              {t('Remove selected ({n})', { n: selected.size })}
+            </Button>
+          </div>
+        )}
         <Message message={action.message} />
         {!rows.length ? (
           <Empty>{data?.length ? 'Nothing matches these filters.' : 'Nothing waiting for a human.'}</Empty>
@@ -145,21 +155,32 @@ export function Inbox() {
                     <td>
                       {AGENT_NAMES[item.agent]} {item.dryRun && <Badge tone="muted">dry run</Badge>}
                     </td>
-                    <td>{url ? <a href={url} target="_blank" rel="noreferrer">{String(item.data.title ?? item.key)}</a> : String(item.data.title ?? item.key)}</td>
+                    <td>{url ? <a href={url} target={url.startsWith('#') ? undefined : '_blank'} rel="noreferrer">{String(item.data.title ?? item.key)}</a> : String(item.data.title ?? item.key)}</td>
                     <td>
+                      <Badge tone={item.status === 'waiting' ? 'info' : 'warn'}>{KINDS[item.status]}</Badge>{' '}
                       <Reason text={String(item.data.reason ?? (item.status === 'failed' ? t('Failed: {error}', { error: String(item.data.error ?? '') }) : item.status === 'waiting' ? t('Waiting for an answer on the card') : t('Needs a human')))} />
                     </td>
                     <td>
                       <Time iso={item.updatedAt} />
                     </td>
                     <td>
-                      {item.data.card ? (
-                        <Button onClick={() => createCard(item)}>Create card</Button>
-                      ) : (
-                        <Button onClick={() => api('/inbox/retry', { method: 'POST', body: { agent: item.agent, key: item.key, dryRun: item.dryRun } }).then(reload)}>
-                          Retry
+                      <span className="row tight nowrap">
+                        {url && (
+                          <a className="btn primary" href={url} target={url.startsWith('#') ? undefined : '_blank'} rel="noreferrer">
+                            {t(openLabel(item, url))}
+                          </a>
+                        )}
+                        {item.data.card ? (
+                          <Button onClick={() => createCard(item)}>Create card</Button>
+                        ) : (
+                          <Button onClick={() => api('/inbox/retry', { method: 'POST', body: { agent: item.agent, key: item.key, dryRun: item.dryRun } }).then(reload)}>
+                            Retry
+                          </Button>
+                        )}
+                        <Button variant="danger" onClick={() => remove(item)}>
+                          Remove
                         </Button>
-                      )}
+                      </span>
                     </td>
                   </tr>
                 );

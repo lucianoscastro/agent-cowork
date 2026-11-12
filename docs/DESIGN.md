@@ -91,10 +91,9 @@ Screens are grouped by intent in a thin black **global nav**; the pages of the c
 | Group | Pages | Question it answers |
 | --- | --- | --- |
 | Home | Today | What waits for me? Is the team working? |
-| Work | Inbox · Runs · Findings | What needs a decision, and what did the agents do? |
+| Work | Inbox · Runs · Findings · Brain · Usage | What needs a decision, what did the agents do and learn, how close are the account limits? |
 | Team | One page per agent (Overview · Settings · Prompts) | What does this agent do, how is it set, why is it off? |
-| Setup | Projects · Accounts · General · Instructions | What does the instance work on, and as whom? |
-| History | Usage · Activity | What did it cost, how close are the account limits, who changed what? |
+| Setup | Projects · Accounts · General · Instructions · Activity | What does the instance work on, as whom, and who changed what? |
 
 Rules that hold on every page:
 

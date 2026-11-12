@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocale, useT } from '../i18n';
 import { type AccountInfo, api, clearSecret, type LoginState, type ProviderId, saveSection, setSecret, type SettingsResponse } from '../api';
-import { Badge, Button, Card, Field, Loading, Message, ModelInput, PageHeader, PROVIDER_NAMES, Select, Text, useAction, useFetch, useUnsaved } from '../ui';
+import { Badge, Button, Card, Field, FoldCard, Loading, Message, ModelInput, PageHeader, PROVIDER_NAMES, reasonText, Select, Text, useAction, useFetch, useUnsaved } from '../ui';
 
 const NOTES: Record<ProviderId, { apiKey: string; account: string }> = {
   claude: {
@@ -145,14 +145,16 @@ function ProviderCard({ id, settings, reload }: { id: ProviderId; settings: Sett
   const savedMethod = section.authMethod;
 
   return (
-    <Card
+    <FoldCard
+      open={!status.ready}
       title={
         <>
-          {PROVIDER_NAMES[id]} {status.ready ? <Badge tone="ok">connected</Badge> : <Badge tone="warn">not connected</Badge>}
+          {PROVIDER_NAMES[id]} {status.ready ? <Badge tone="ok">connected</Badge> : <Badge tone="warn">not connected</Badge>}{' '}
+          {status.account?.email && <span className="muted small">{status.account.email}</span>}
         </>
       }
     >
-      {!status.ready && <p className="reason">{status.reason}</p>}
+      {!status.ready && <p className="reason">{reasonText(t, status.reason)}</p>}
       {status.ready && status.account && <Account info={status.account} />}
       <div className="row fields">
         <Field label="Authentication" hint="How this instance signs in to the runtime.">
@@ -163,7 +165,7 @@ function ProviderCard({ id, settings, reload }: { id: ProviderId; settings: Sett
           />
         </Field>
         <Field label="Default model" hint="Used when an agent does not pick one.">
-          <ModelInput provider={id} value={defaultModel} onChange={setDefaultModel} placeholder="CLI default" connection={`${status.ready}:${status.account?.since ?? ''}`} />
+          <ModelInput provider={id} value={defaultModel} onChange={setDefaultModel} placeholder="CLI default" connection={`${status.ready}:${status.account?.since ?? ''}`} ready={status.ready} />
         </Field>
         <Button
           variant="primary"
@@ -212,7 +214,7 @@ function ProviderCard({ id, settings, reload }: { id: ProviderId; settings: Sett
           <Message message={action.message} />
         </p>
       )}
-    </Card>
+    </FoldCard>
   );
 }
 

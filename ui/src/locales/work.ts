@@ -4,6 +4,7 @@
  */
 const translations = {
   'pt-BR': {
+    'No runtime connected yet.': 'Nenhum runtime conectado ainda.',
     'What needs a decision from you: questions on cards, parked runs, PRs and findings.': 'O que precisa de uma decisão sua: perguntas nos cards, runs estacionados, PRs e achados.',
     'How it works': 'Como funciona',
     '{n} running now': '{n} rodando agora',
@@ -36,7 +37,11 @@ const translations = {
     'PR follow-up paused': 'Acompanhamento de PR pausado',
     'Out of retries': 'Sem novas tentativas',
     'Created {key}': '{key} criado',
-    'Remove {n} item(s) from the inbox? Their agents stop handling them (see above).': 'Remover {n} item(ns) da caixa de entrada? Os agentes deles deixam de tratá-los (veja acima).',
+    'Remove {n} item(s) from the inbox? Their agents stop waiting on the card, following the PR or retrying them.': 'Remover {n} item(ns) da caixa de entrada? Os agentes deixam de aguardar o card, de acompanhar o PR ou de tentar de novo.',
+    'Answer on the card': 'Responder no card',
+    'Open report': 'Abrir relatório',
+    'Open PR': 'Abrir PR',
+    Open: 'Abrir',
     'Cards waiting for an answer or parked by a gate resume when someone comments on the card; open PRs the developer gave up on resume when someone comments on the PR. Dependabot PRs here need a human review, and audits here (any category) have critical or high findings (the link opens the report). Sentinel findings from exploration wait here:': 'Cards aguardando resposta ou estacionados por uma verificação retomam quando alguém comenta no card; PRs abertos dos quais o Developer desistiu retomam quando alguém comenta no PR. Os PRs do Dependabot aqui precisam de revisão humana, e as auditorias aqui (qualquer categoria) têm achados críticos ou altos (o link abre o relatório). Os achados de exploração do Sentinel aguardam aqui:',
     'Create card': 'Criar card',
     "files one on its project's board.": 'registra um no quadro do projeto.',
@@ -183,6 +188,7 @@ const translations = {
     'WCAG 2.2 AA on React repositories: labels, keyboard, focus, dialogs, contrast': 'WCAG 2.2 AA em repositórios React: rótulos, teclado, foco, diálogos, contraste',
   },
   'es-ES': {
+    'No runtime connected yet.': 'Aún no hay ningún runtime conectado.',
     'What needs a decision from you: questions on cards, parked runs, PRs and findings.': 'Lo que necesita una decisión tuya: preguntas en las tarjetas, ejecuciones aparcadas, PRs y hallazgos.',
     'How it works': 'Cómo funciona',
     '{n} running now': '{n} en curso ahora',
@@ -215,7 +221,11 @@ const translations = {
     'PR follow-up paused': 'Seguimiento de PR en pausa',
     'Out of retries': 'Sin más reintentos',
     'Created {key}': '{key} creado',
-    'Remove {n} item(s) from the inbox? Their agents stop handling them (see above).': '¿Quitar {n} elemento(s) de la bandeja de entrada? Sus agentes dejarán de gestionarlos (ver arriba).',
+    'Remove {n} item(s) from the inbox? Their agents stop waiting on the card, following the PR or retrying them.': '¿Quitar {n} elemento(s) de la bandeja de entrada? Sus agentes dejan de esperar la tarjeta, de seguir el PR o de reintentarlos.',
+    'Answer on the card': 'Responder en la tarjeta',
+    'Open report': 'Abrir informe',
+    'Open PR': 'Abrir PR',
+    Open: 'Abrir',
     'Cards waiting for an answer or parked by a gate resume when someone comments on the card; open PRs the developer gave up on resume when someone comments on the PR. Dependabot PRs here need a human review, and audits here (any category) have critical or high findings (the link opens the report). Sentinel findings from exploration wait here:': 'Las tarjetas que esperan respuesta o que un control ha aparcado se reanudan cuando alguien comenta en la tarjeta; los PR abiertos que el Developer abandonó se reanudan cuando alguien comenta en el PR. Los PR de Dependabot de aquí necesitan una revisión humana, y las auditorías de aquí (de cualquier categoría) tienen hallazgos críticos o altos (el enlace abre el informe). Los hallazgos de exploración de Sentinel esperan aquí:',
     'Create card': 'Crear tarjeta',
     "files one on its project's board.": 'crea una en el tablero de su proyecto.',

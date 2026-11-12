@@ -266,7 +266,7 @@ The global nav has a language picker (English, Português, Español, with flags)
 | Usage | Each provider's account limits as its last run reported them (usage windows with their resets: Claude Code per plan from its runs; Codex per plan and agy per model group, also read every 10 minutes without a model call, from `codex app-server` and agy's `/usage`, so they stay current while an account is blocked) and a hit limit's pause, which **Try again now** lifts; tokens and Claude's estimated cost per run, and totals by agent, by model and by day |
 | Activity | Audit log |
 
-Navigation groups the screens by intent: **Home**, **Work** (Inbox, Runs, Findings, Brain), **Team** (the agents), **Setup** (Projects, Accounts, General, Instructions) and **History** (Usage, Activity). A bar on every page names the agents that are live. The visual language follows `docs/DESIGN.md`: one accent color for actions, hairline cards, light and dark themes.
+Navigation groups the screens by intent: **Home**, **Work** (Inbox, Runs, Findings, Brain, Usage), **Team** (the agents) and **Setup** (Projects, Accounts, General, Instructions, Activity). A bar on every page names the agents that are live. The visual language follows `docs/DESIGN.md`: one accent color for actions, hairline cards, light and dark themes.
 
 ## 8. Technical direction
 
