@@ -1,6 +1,12 @@
 /** The Agents pages (team grid, one agent's overview and settings). Shape: Translations in i18n.tsx (no import, so the server's tests can load this file as it is). */
 const translations = {
   'pt-BR': {
+    'Turn it on in Settings': 'Ative em Configurações',
+    'GitHub token not set': 'Token do GitHub não configurado',
+    'No project has a Jira board': 'Nenhum projeto tem um board do Jira',
+    'No audit category enabled': 'Nenhuma categoria de auditoria ativada',
+    'No project has repositories': 'Nenhum projeto tem repositórios',
+    'No project has a test environment': 'Nenhum projeto tem ambiente de teste',
     // Model picker and save row
     'Pick from the list or type any id. Empty uses the provider default.': 'Escolha da lista ou digite qualquer id. Vazio usa o padrão do provedor.',
     Provider: 'Provedor',
@@ -129,6 +135,12 @@ const translations = {
     'Changes apply on the next poll.': 'As mudanças valem a partir da próxima verificação.',
   },
   'es-ES': {
+    'Turn it on in Settings': 'Actívalo en Configuración',
+    'GitHub token not set': 'Token de GitHub no configurado',
+    'No project has a Jira board': 'Ningún proyecto tiene un tablero de Jira',
+    'No audit category enabled': 'Ninguna categoría de auditoría activada',
+    'No project has repositories': 'Ningún proyecto tiene repositorios',
+    'No project has a test environment': 'Ningún proyecto tiene entorno de pruebas',
     // Model picker and save row
     'Pick from the list or type any id. Empty uses the provider default.': 'Elige de la lista o escribe cualquier id. Vacío usa el predeterminado del proveedor.',
     Provider: 'Proveedor',

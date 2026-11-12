@@ -4,6 +4,8 @@
  */
 const translations = {
   'pt-BR': {
+    'What needs a decision from you: questions on cards, parked runs, PRs and findings.': 'O que precisa de uma decisão sua: perguntas nos cards, runs estacionados, PRs e achados.',
+    'How it works': 'Como funciona',
     '{n} running now': '{n} rodando agora',
     'Nothing running now': 'Nada rodando agora',
     'Nothing needs you': 'Nada precisa de você',
@@ -181,6 +183,8 @@ const translations = {
     'WCAG 2.2 AA on React repositories: labels, keyboard, focus, dialogs, contrast': 'WCAG 2.2 AA em repositórios React: rótulos, teclado, foco, diálogos, contraste',
   },
   'es-ES': {
+    'What needs a decision from you: questions on cards, parked runs, PRs and findings.': 'Lo que necesita una decisión tuya: preguntas en las tarjetas, ejecuciones aparcadas, PRs y hallazgos.',
+    'How it works': 'Cómo funciona',
     '{n} running now': '{n} en curso ahora',
     'Nothing running now': 'Nada en curso ahora',
     'Nothing needs you': 'Nada te necesita',

@@ -1,5 +1,5 @@
 import { api, type Overview, type SettingsResponse } from '../api';
-import { AGENT_NAMES, AGENT_SUMMARY, Badge, Button, Card, duration, Empty, Loading, RunStatus, Time, useFetch } from '../ui';
+import { AGENT_NAMES, Badge, Button, Card, duration, Empty, Loading, RunStatus, Time, useFetch } from '../ui';
 import { useT } from '../i18n';
 import { type Accounts, type Limits, LimitsCard } from './Usage';
 
@@ -60,43 +60,8 @@ export function Home() {
         </Card>
       )}
 
-      <section className="stack">
-        <h2 className="section-title">{t('Team')}</h2>
-        {off.length > 0 && (
-          <p className="reason">
-            {off.length > 1
-              ? t('{n} enabled agents are not running: open each to see why.', { n: off.length })
-              : t('1 enabled agent is not running: open it to see why.')}
-          </p>
-        )}
-        <div className="agents-grid">
-          {data.agents.map((a) => (
-            <a key={a.id} href={`#/agents/${a.id}`} className="card agent-card">
-              <h2>
-                {AGENT_NAMES[a.id]}
-                <span className="row tight">
-                  {a.polling && <Badge tone="info">working</Badge>}
-                  {a.on ? <Badge tone="ok">on</Badge> : <Badge tone="muted">off</Badge>}
-                  {a.on && (data.live.includes(a.id) ? <Badge tone="warn">live</Badge> : <Badge tone="muted">dry run</Badge>)}
-                </span>
-              </h2>
-              <p className="what">{t(AGENT_SUMMARY[a.id])}</p>
-              {!a.on && a.reason !== 'Disabled' && <p className="why">{a.reason}</p>}
-              {a.on && a.lastError && <p className="why">{t('Last poll failed: {error}', { error: a.lastError.message })}</p>}
-              <p className="when">
-                {t('Last poll')} <Time iso={a.lastPoll} />
-              </p>
-            </a>
-          ))}
-        </div>
-      </section>
-
-      {usage && <LimitsCard limits={usage.limits} accounts={usage.accounts} onChange={reloadUsage} />}
-
-      <Card title="Running now">
-        {data.running.length === 0 ? (
-          <Empty>Nothing running.</Empty>
-        ) : (
+      {data.running.length > 0 && (
+        <Card title="Running now">
           <table>
             <tbody>
               {data.running.map((r) => (
@@ -117,8 +82,38 @@ export function Home() {
               ))}
             </tbody>
           </table>
+        </Card>
+      )}
+
+      <section className="stack">
+        <h2 className="section-title">{t('Team')}</h2>
+        {off.length > 0 && (
+          <p className="reason">
+            {off.length > 1
+              ? t('{n} enabled agents are not running: open each to see why.', { n: off.length })
+              : t('1 enabled agent is not running: open it to see why.')}
+          </p>
         )}
-      </Card>
+        <div className="agents-grid compact">
+          {data.agents.map((a) => (
+            <a key={a.id} href={`#/agents/${a.id}`} className="card agent-card">
+              <h2>
+                {AGENT_NAMES[a.id]}
+                <span className="row tight">
+                  {a.polling && <Badge tone="info">working</Badge>}
+                  {a.on ? <Badge tone="ok">on</Badge> : <Badge tone="muted">off</Badge>}
+                  {a.on && (data.live.includes(a.id) ? <Badge tone="warn">live</Badge> : <Badge tone="muted">dry run</Badge>)}
+                </span>
+              </h2>
+              {!a.on && a.reason !== 'Disabled' && <p className="why">{t(a.reason ?? '')}</p>}
+              {a.on && a.lastError && <p className="why">{t('Last poll failed: {error}', { error: a.lastError.message })}</p>}
+              <p className="when">
+                {t('Last poll')} <Time iso={a.lastPoll} />
+              </p>
+            </a>
+          ))}
+        </div>
+      </section>
 
       <Card title="Recent runs" actions={<a href="#/runs">{t('All runs')}</a>}>
         {data.recent.length === 0 ? (
@@ -146,6 +141,7 @@ export function Home() {
           </table>
         )}
       </Card>
+      {usage && <LimitsCard limits={usage.limits} accounts={usage.accounts} onChange={reloadUsage} />}
     </>
   );
 }

@@ -366,7 +366,7 @@ export function TeamPage() {
               </span>
             </h2>
             <p className="what">{t(AGENT_SUMMARY[a.id])}</p>
-            {!a.on && <p className="why">{a.reason}</p>}
+            {!a.on && a.reason !== 'Disabled' && <p className="why">{t(a.reason ?? '')}</p>}
             <p className="when">
               {t('Last poll')} <Time iso={a.lastPoll} />
             </p>
@@ -401,7 +401,12 @@ function AgentOverview({ id, overview, reload }: { id: AgentId; overview: Overvi
         <dl className="facts">
           <dt>{t('Status')}</dt>
           <dd>
-            <StateBadge a={a} /> {!a.on && <span className="reason inline">{a.reason}</span>}
+            <StateBadge a={a} />{' '}
+            {a.reason === 'Disabled' ? (
+              <a href={`#/agents/${id}/settings`}>{t('Turn it on in Settings')}</a>
+            ) : (
+              !a.on && <span className="reason inline">{t(a.reason ?? '')}</span>
+            )}
           </dd>
           <dt>{t('Mode')}</dt>
           <dd>{overview.live.includes(id) ? <Badge tone="warn">live: writes to GitHub and Jira</Badge> : <Badge tone="muted">dry run</Badge>}</dd>
@@ -435,19 +440,21 @@ function AgentOverview({ id, overview, reload }: { id: AgentId; overview: Overvi
           >
             Run now
           </Button>
-          <Button
-            variant="danger"
-            onClick={() =>
-              window.confirm(
-                t('Stop everything {agent} is running now? The stopped items go to the inbox and are not picked up again until you Retry them. The agent stays on.', {
-                  agent: AGENT_NAMES[id],
-                }),
-              ) &&
-              api(`/agents/${id}/stop`, { method: 'POST' }).then(reload)
-            }
-          >
-            Stop running work
-          </Button>
+          {(a.polling || overview.running.some((r) => r.agent === id)) && (
+            <Button
+              variant="danger"
+              onClick={() =>
+                window.confirm(
+                  t('Stop everything {agent} is running now? The stopped items go to the inbox and are not picked up again until you Retry them. The agent stays on.', {
+                    agent: AGENT_NAMES[id],
+                  }),
+                ) &&
+                api(`/agents/${id}/stop`, { method: 'POST' }).then(reload)
+              }
+            >
+              Stop running work
+            </Button>
+          )}
         </div>
         <Message message={runNow.message} />
       </Card>

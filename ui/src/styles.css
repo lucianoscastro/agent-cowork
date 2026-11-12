@@ -278,7 +278,11 @@ table.categories input[type=number] { width: 80px; }
 .needs-you { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 24px; }
 .needs-you .big { font-size: 34px; font-weight: 600; letter-spacing: -0.374px; margin: 0 0 4px; }
 .needs-you p { margin: 0; }
-.agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 16px; }
+.agents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; }
+/* Home: one line of state per agent; what each agent does is on the Team page. */
+.agents-grid.compact { gap: 12px; }
+.agents-grid.compact .agent-card { padding: 16px 20px; gap: 6px; }
+.agents-grid.compact .agent-card h2 { font-size: 16px; margin: 0; }
 a.agent-card { color: var(--fg); display: flex; flex-direction: column; gap: 8px; }
 a.agent-card:hover { text-decoration: none; border-color: var(--accent); }
 .agent-card h2 { justify-content: space-between; }

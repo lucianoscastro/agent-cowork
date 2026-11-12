@@ -4,7 +4,7 @@ import { useT } from '../i18n';
 import { TestEnvironmentFields } from './TestEnvironment';
 
 const STACKS = Object.keys(STACK_NAMES) as Stack[];
-import { Badge, Button, Field, Lines, Loading, Message, PageHeader, Select, Text, useAction, useFetch, useUnsaved } from '../ui';
+import { Badge, Button, Empty, Field, Lines, Loading, Message, PageHeader, Select, Text, useAction, useFetch, useUnsaved } from '../ui';
 
 type RepoRow = { repo: string; stack: Stack; verify: string[] };
 type ProjectDraft = { name: string; boardId: string; baseBranch: string; repos: RepoRow[]; environment?: TestEnvironment };
@@ -145,6 +145,7 @@ export function Projects() {
           "A project maps Jira cards to the repositories they may change. The developer agent checks out every repository of the project side by side; the platform runs each changed repository's verify commands before opening a PR. The Dependabot agent uses the same verify commands.",
         )}
       </p>
+      {projects.length === 0 && <Empty>No project yet: add one to link a Jira board to its repositories.</Empty>}
       {projects.map((p, i) => (
         <details key={i} className="card accordion" open={open.has(i)} onToggle={(e) => setOpenAt(i, e.currentTarget.open)}>
           <summary>

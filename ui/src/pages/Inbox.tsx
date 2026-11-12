@@ -70,13 +70,17 @@ export function Inbox() {
   return (
     <>
       <PageHeader title="Inbox" />
-      <p className="muted">
-        {t(
-          'Cards waiting for an answer or parked by a gate resume when someone comments on the card; open PRs the developer gave up on resume when someone comments on the PR. Dependabot PRs here need a human review, and audits here (any category) have critical or high findings (the link opens the report). Sentinel findings from exploration wait here:',
-        )}{' '}
-        <b>{t('Create card')}</b> {t("files one on its project's board.")} <b>{t('Retry')}</b> {t('makes the agent pick the item up again on its next poll.')}{' '}
-        <b>{t('Remove')}</b> {t('marks it handled: the agent stops waiting on the card, stops following the PR, or skips that Dependabot commit; a repository is audited again only after new commits.')}
-      </p>
+      <p className="lead">{t('What needs a decision from you: questions on cards, parked runs, PRs and findings.')}</p>
+      <details className="fold">
+        <summary>{t('How it works')}</summary>
+        <p className="muted">
+          {t(
+            'Cards waiting for an answer or parked by a gate resume when someone comments on the card; open PRs the developer gave up on resume when someone comments on the PR. Dependabot PRs here need a human review, and audits here (any category) have critical or high findings (the link opens the report). Sentinel findings from exploration wait here:',
+          )}{' '}
+          <b>{t('Create card')}</b> {t("files one on its project's board.")} <b>{t('Retry')}</b> {t('makes the agent pick the item up again on its next poll.')}{' '}
+          <b>{t('Remove')}</b> {t('marks it handled: the agent stops waiting on the card, stops following the PR, or skips that Dependabot commit; a repository is audited again only after new commits.')}
+        </p>
+      </details>
       <Card>
         <div className="row filters">
           <Field label="Agent">
