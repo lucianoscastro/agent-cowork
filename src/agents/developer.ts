@@ -28,14 +28,30 @@ async function ciLogs(text: string, repos: string[]): Promise<string> {
 export type RepoCheckout = { role: string; repo: string; base: string; verify: string[]; work: Checkout };
 type Finding = { severity: 'blocker' | 'major' | 'minor'; where: string; body: string };
 type Review = { verdict: 'approve' | 'changes'; findings: Finding[]; summary: string };
-type Plan = { status: 'ready' | 'needs_input'; plan: string; questions: string };
+/**
+ * What the card needs, as the plan declares it: code (the usual PR), promote (PRs between existing branches,
+ * opened by the platform), answer (a reply on the card) or handoff (a checklist for a person with access the
+ * agents don't have). The platform runs each one; the agent never gets the GitHub token.
+ */
+type Kind = 'code' | 'promote' | 'answer' | 'handoff';
+export type Promotion = { repo: string; from: string; to: string };
+type Plan = { status: 'ready' | 'needs_input'; kind: Kind; plan: string; questions: string; promotions: Promotion[] };
 export type Built = { status: 'done' | 'needs_input'; title: string; summary: string };
 type Addressed = { status: 'done' | 'disputed' | 'needs_input'; disputes: string[]; summary: string };
 
 const PLAN_SCHEMA = {
   type: 'object',
-  properties: { status: { type: 'string', enum: ['ready', 'needs_input'] }, plan: { type: 'string' }, questions: { type: 'string' } },
-  required: ['status', 'plan', 'questions'],
+  properties: {
+    status: { type: 'string', enum: ['ready', 'needs_input'] },
+    kind: { type: 'string', enum: ['code', 'promote', 'answer', 'handoff'] },
+    plan: { type: 'string' },
+    questions: { type: 'string' },
+    promotions: {
+      type: 'array',
+      items: { type: 'object', properties: { repo: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' } }, required: ['repo', 'from', 'to'] },
+    },
+  },
+  required: ['status', 'kind', 'plan', 'questions', 'promotions'],
 };
 const REVIEW_SCHEMA = {
   type: 'object',
@@ -162,10 +178,10 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
   if (!dryRun && cfg.startTransition) await jira.transition(key, cfg.startTransition);
 
   /** Posts to the card, moves it to Blocked, and ends the run waiting for a human comment. */
-  const block = async (status: 'waiting' | 'parked', text: string): Promise<RunEnd> => {
+  const block = async (status: 'waiting' | 'parked', text: string, intro?: string): Promise<RunEnd> => {
     run.event('artifact', status === 'waiting' ? 'Asked on the card' : 'Parked for a human', text);
     if (dryRun) return { status, summary: text, data: { waitingSince: new Date().toISOString() } };
-    const intro = status === 'waiting'
+    intro ??= status === 'waiting'
       ? 'agentCowork needs more information to continue. Reply in a comment and it will resume.'
       : 'agentCowork stopped and needs a human. Reply in a comment to resume, or take the card over.';
     const { created } = await jira.comment(key, `${BOT_MARK} ${intro}\n\n${text}`);
@@ -233,7 +249,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     let plan = (await lead('plan-1', await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only')).output as Plan;
     for (let round = 1; ; round++) {
       if (plan.status === 'needs_input') return await block('waiting', plan.questions);
-      vars.plan = plan.plan;
+      // The reviewer judges the kind too: a promotion or a handoff must not stand in for a code change.
+      vars.plan = plan.kind === 'code' ? plan.plan : `Kind: ${plan.kind}${plan.promotions.map((p) => `\n- promote ${p.repo}: ${p.from} → ${p.to}`).join('')}\n\n${plan.plan}`;
       if (round > cfg.limits.planReview || !reviewers.length) break;
       run.stage(`Plan review ${round}`);
       const review = (await reviewer(`review-plan-${round}`, await renderPrompt('developer/review-plan', vars))).output;
@@ -245,6 +262,34 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       signals.push(`The plan reviewer asked for changes (the plan was revised):\n${formatFindings(review.findings)}`);
       vars.reviewContext = `The independent reviewer asked for changes to your previous plan. Revise it.\n\n<previous_plan>\n${plan.plan}\n</previous_plan>\n\n<review_findings>\n${formatFindings(review.findings)}\n</review_findings>`;
       plan = (await lead(`plan-${round + 1}`, await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only')).output as Plan;
+    }
+
+    if (plan.kind === 'answer') {
+      run.event('artifact', 'Answer', plan.plan);
+      if (!dryRun) {
+        await jira.comment(key, `${BOT_MARK} agentCowork's answer (no code change was needed):\n\n${plan.plan}`);
+        if (cfg.doneTransition) await jira.transition(key, cfg.doneTransition);
+      }
+      return { status: 'done', summary: `${dryRun ? 'would answer' : 'answered'} on the card` };
+    }
+    if (plan.kind === 'handoff') {
+      return await block('parked', plan.plan, 'agentCowork cannot do this part: it needs a person with access the agents do not have. Nothing to answer: do the checklist below, then comment on the card when it is done (it resumes) or move the card on.');
+    }
+    if (plan.kind === 'promote') {
+      run.stage('Promote');
+      const { urls, synced } = await openPromotions(run, key, project, plan.promotions, plan.plan, dryRun);
+      const text = [
+        urls.length && `Pull requests opened from the existing branches (nothing was merged):\n${urls.join('\n')}`,
+        synced.length && `Nothing to promote:\n${synced.map((s) => `- ${s}`).join('\n')}`,
+      ].filter(Boolean).join('\n\n');
+      run.event('artifact', `Promotion${dryRun ? ' (dry run)' : ''}`, text);
+      if (!dryRun) {
+        await jira.comment(key, `${BOT_MARK} ${text}\n\n${plan.plan}`);
+        if (urls.length) notify('pr', { title: `Developer opened ${urls.length === 1 ? 'a promotion pull request' : `${urls.length} promotion pull requests`} for ${key}`, text: urls.join('\n'), url: urls[0], agent: 'developer' });
+        if (cfg.doneTransition) await jira.transition(key, cfg.doneTransition);
+      }
+      // Not watched by the PR follow-up: its fixes would push to the source branch itself.
+      return { status: 'done', summary: `${dryRun ? 'would promote' : 'promoted'}: ${urls.join(', ') || 'already in sync'}` };
     }
 
     // --- Build ---
@@ -337,6 +382,49 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
 }
 
 export class NeedsInput extends Error {}
+
+const BRANCH = /^\w[\w./-]{0,200}$/;
+/** Whether a promotion the plan declared is a pair of branch names of this project's repositories. Exported for tests. */
+export const validPromotion = (project: Project, p: Promotion): boolean =>
+  Object.values(project.repos).some((r) => r.repo === p.repo) && BRANCH.test(p.from) && BRANCH.test(p.to) && !p.from.includes('..') && !p.to.includes('..') && p.from !== p.to;
+
+/**
+ * Opens (or reuses) one PR per declared promotion, from one existing branch into another of the same
+ * repository, with the plan as its description; never merges or pushes. GitHub's compare also proves both
+ * branches exist. A pair already in sync is reported, not opened.
+ */
+async function openPromotions(run: Run, key: string, project: Project, promotions: Promotion[], body: string, dryRun: boolean): Promise<{ urls: string[]; synced: string[] }> {
+  const cfg = read('agents.developer');
+  // ponytail: at most 10 PRs per card; a larger promotion is split into cards.
+  if (!promotions.length || promotions.length > 10) throw new Error(`The plan declared ${promotions.length} promotions; between 1 and 10 are allowed`);
+  const bad = promotions.filter((p) => !validPromotion(project, p));
+  if (bad.length) throw new Error(`Not a pair of branches of this project's repositories: ${bad.map((p) => `${p.repo} ${p.from} → ${p.to}`).join(', ')}`);
+  const urls: string[] = [];
+  const synced: string[] = [];
+  for (const p of promotions) {
+    const ahead = Number(await gh(['api', `repos/${p.repo}/compare/${encodeURIComponent(p.to)}...${encodeURIComponent(p.from)}`, '-q', '.ahead_by']));
+    if (!ahead) {
+      synced.push(`${p.repo}: \`${p.to}\` already has every commit of \`${p.from}\``);
+      continue;
+    }
+    if (dryRun) {
+      urls.push(`${p.repo} ${p.from} → ${p.to} (dry run)`);
+      continue;
+    }
+    const existing = await gh(['pr', 'list', '--repo', p.repo, '--head', p.from, '--base', p.to, '--state', 'open', '--json', 'url', '-q', '.[0].url']);
+    const url =
+      existing ||
+      (await gh([
+        'pr', 'create', '--repo', p.repo, '--base', p.to, '--head', p.from,
+        '--title', `${key}: Sync ${p.from} → ${p.to}`,
+        '--body', `${body}\n\n---\n${BOT_MARK} Generated by agentCowork from ${key}`,
+        ...(cfg.draft ? ['--draft'] : []),
+      ]));
+    run.event('artifact', `${existing ? 'Reused' : 'Opened'} ${url}`);
+    urls.push(url);
+  }
+  return { urls, synced };
+}
 
 /** Commits and verifies; on a red result asks `fix` and tries again, up to `limit` times. Returns the last failure. */
 export async function verifyWithFixes(

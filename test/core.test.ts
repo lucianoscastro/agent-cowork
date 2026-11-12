@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
-import { reviewPasses } from '../src/agents/developer.ts';
+import { reviewPasses, validPromotion } from '../src/agents/developer.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
@@ -865,4 +865,14 @@ test('fallbackOrder: chosen provider first, then Claude, Codex, agy, avoided las
   assert.deepEqual(fallbackOrder('agy', [], true), ['agy', 'claude', 'codex']);
   assert.deepEqual(fallbackOrder('agy', ['claude', 'agy'], true), ['agy', 'codex', 'claude']);
   assert.deepEqual(fallbackOrder('codex', [], false), ['codex']);
+});
+
+test('validPromotion: only two different branch names of a repository of the project', () => {
+  const project = { name: 'Shop', repos: { api: { repo: 'acme/shop-api', stack: 'dotnet' as const } } };
+  assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: 'develop', to: 'qa' }), true);
+  assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: 'release/1.2', to: 'staging' }), true);
+  assert.equal(validPromotion(project, { repo: 'acme/other', from: 'develop', to: 'qa' }), false);
+  assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: 'develop', to: 'develop' }), false);
+  assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: '--force', to: 'qa' }), false);
+  assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: 'develop', to: 'qa..main' }), false);
 });

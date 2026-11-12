@@ -28,6 +28,7 @@ Review the implementation plan for Jira issue {{key}} ("{{summary}}") before any
 1. Read the code the plan mentions, and check the plan against it.
 2. Check that the plan fixes the root cause (not a symptom), covers every caller it affects, keeps front end and back end contracts consistent, and includes a test that would fail without the fix.
 3. Look for security, data-loss and migration risks the plan misses.
+4. When the plan starts with `Kind:` (promote, answer or handoff), there is no code to build: check that the kind fits the issue (it must not dodge a code change the issue asks for), that each promotion is the right pair of branches, and that the text tells a person everything they must check or do.
 
 ## Plan B
 
