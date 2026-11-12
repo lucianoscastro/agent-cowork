@@ -388,7 +388,10 @@ function AgentOverview({ id, overview, reload, settings, reloadSettings }: { id:
   const section = settings.sections[key];
   // On and dry run live here, where the state is read: saved at once, going live asks first.
   const change = (patch: { enabled?: boolean; dryRun?: boolean }) => {
-    if (patch.dryRun === false && !window.confirm(t('Take {agent} live? It will write to GitHub and Jira as the configured users.', { agent: AGENT_NAMES[id] }))) return;
+    // Confirm whenever the change makes it write for real: dry run off while on, or on while dry run is off.
+    const next = { ...section, ...patch };
+    const goesLive = next.enabled && !next.dryRun && !(section.enabled && !section.dryRun);
+    if (goesLive && !window.confirm(t('Take {agent} live? It will write to GitHub and Jira as the configured users.', { agent: AGENT_NAMES[id] }))) return;
     void switches.run(async () => {
       await saveSection(key, { ...section, ...patch } as typeof section);
       await Promise.all([reload(), reloadSettings()]);

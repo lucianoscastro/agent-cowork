@@ -155,7 +155,7 @@ pre { margin: 6px 0 0; }
 pre.log, .ev pre { background: var(--code); padding: 10px; border-radius: 8px; max-height: 480px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .accordion { margin-bottom: 12px; }
-.fold-title { font-size: 17px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fold-title { margin: 0; font-size: 17px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .accordion > summary { cursor: pointer; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; list-style: none; }
 .accordion > summary::-webkit-details-marker { display: none; }
 .accordion > summary::before { content: '▸'; color: var(--muted); transition: transform 0.15s; }

@@ -92,7 +92,7 @@ export function FoldCard({ title, open, children }: { title: ReactNode; open: bo
   return (
     <details className="card accordion" open={isOpen} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
-        <span className="fold-title">{tr(t, title)}</span>
+        <h2 className="fold-title">{tr(t, title)}</h2>
       </summary>
       {children}
     </details>
