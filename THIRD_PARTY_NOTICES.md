@@ -28,6 +28,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## ui-taste
+
+The `ui-taste` skill in `defaults/skills/ui-taste/` (`origin: custom`) is synthesised from Anthropic's
+`frontend-design` skill (Apache License 2.0), Leonxlnx's `taste-skill` / `design-taste-frontend` 2.5.1 (MIT) and
+superdesign's `superdesign-skill` (MIT). Its product-UI rules, Portuguese copy tells and scanner are additions.
+Each source is used under its own license; the Apache License 2.0 text is at https://www.apache.org/licenses/LICENSE-2.0.
+
 ## ponytail
 
 The "Lazy Senior Developer Mindset" section of `defaults/AGENTS.md` is taken from

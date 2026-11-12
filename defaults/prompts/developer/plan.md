@@ -40,6 +40,7 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
    - **Approach**: the root cause or design, in a few sentences.
    - **Changes**: per repository, the files and functions to change, and why.
    - **Tests**: the test that fails before the fix (bug) or covers the feature, and where it goes.
+   - **UI** (only when the issue changes what people see): per `ui-taste`, the one-line read (what the screen is, for whom, its one job), the existing tokens and components it reuses, and its empty, loading and error states.
    - **Risks**: contracts between front end and back end, migrations, data, security.
    - **Out of scope**: what you will deliberately not touch.
 

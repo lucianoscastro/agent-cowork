@@ -39,6 +39,7 @@ Resolve Jira issue {{key}} of the project "{{project}}": "{{summary}}". Fix the 
 3. For a bug, reproduce it first with a test that fails. Then fix the root cause in the shared code (search every caller), not the symptom.
 4. For a feature, build the smallest change that fully delivers it. When front end and back end both change, keep the contract between them consistent.
 5. Add or update tests for the change. Use your skills where they apply (`code-rules`, `tdd-workflow`, `backend-patterns`, `frontend-patterns`).
+   - When the change builds or alters UI (a screen, page, form, component or style), follow `ui-taste` in its System-bound mode: the repository's own tokens and components are the vocabulary, and the work ends with its scanner and its checklist. Add `design-system` when tokens change and `check-accessibility` for what people interact with.
 6. Install dependencies and run every "must pass" command of each repository you changed until they all pass.
 
 ## Plan B

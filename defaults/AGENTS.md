@@ -87,6 +87,7 @@ Skills load by description. When a task falls in a skill's domain, use the skill
 | APIs, services, data access, error handling | `backend-patterns` |
 | React architecture, state, performance | `frontend-patterns` |
 | UI look, tokens, visual consistency | `design-system` |
+| Building, restyling or critiquing a screen, page or component so it does not look generic or AI-made | `ui-taste` |
 | Branches, commits, merge or rebase | `git-workflow` |
 | Understanding an unfamiliar repository | `codebase-onboarding` |
 | Security audit before deployment | `check-pre-deploy` |

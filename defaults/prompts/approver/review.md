@@ -17,7 +17,7 @@ You are reviewing pull request {{url}} ("{{title}}"). Decide whether it can be a
 
 1. Run `git diff origin/{{base}}...HEAD` to see the change. Read the surrounding code as needed to understand it.
 2. Apply the criteria of your `code-rules` and `review-code` skills.
-3. Look for correctness bugs, security issues, regressions, missing error handling at trust boundaries, and clear readability or maintainability problems.
+3. Look for correctness bugs, security issues, regressions, missing error handling at trust boundaries, and clear readability or maintainability problems. When the diff changes UI, also apply `ui-taste` (System-bound) and `check-accessibility`.
 4. Keep only findings you are confident about and that are worth the author's time.
 
 ## Plan B

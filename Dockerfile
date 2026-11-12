@@ -56,13 +56,14 @@ ARG DOTNET_PACKAGES=dotnet-sdk-11.0
 COPY --from=tools /opt/apt-keys/ /etc/apt/keyrings/
 # chromium brings the system libraries every Playwright browser needs (the agent runs without root, so
 # `playwright install --with-deps` can't add them later) and is the browser of the Sentinel's browser tools.
+# python3 runs the ui-taste skill's scanner (standard library only).
 # `script` (the pseudo-terminal the Claude account login needs) is already in the base. npm is removed:
 # pnpm is the only package manager.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
  && echo "deb [signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/debian/13/prod trixie main" > /etc/apt/sources.list.d/microsoft.list \
  && echo "deb [signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
  && apt-get update && apt-get -y upgrade \
- && apt-get install -y --no-install-recommends git gh ${DOTNET_PACKAGES} chromium fonts-liberation \
+ && apt-get install -y --no-install-recommends git gh ${DOTNET_PACKAGES} chromium fonts-liberation python3 \
  && rm -rf /var/lib/apt/lists/* \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
  && mkdir -p /data/db /data/work /data/auth /data/logs /data/brain && chown -R node:node /data
