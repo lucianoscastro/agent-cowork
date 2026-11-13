@@ -256,7 +256,11 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       run.stage(`Plan review ${round}`);
       const review = (await reviewer(`review-plan-${round}`, await renderPrompt('developer/review-plan', vars))).output;
       run.event('artifact', `Plan review ${round}: ${review.verdict}`, review);
-      if (reviewPasses(review)) break;
+      if (reviewPasses(review)) {
+        // Outside code the plan is the deliverable a person reads, so the reviewer's minor notes go with it.
+        if (plan.kind !== 'code' && review.findings.length) plan.plan += `\n\n## Reviewer notes\n\n${formatFindings(review.findings)}`;
+        break;
+      }
       if (round === cfg.limits.planReview) {
         return await block('parked', `The reviewer still requests plan changes after ${round} rounds:\n\n${formatFindings(review.findings)}`);
       }
