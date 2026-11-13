@@ -17,7 +17,9 @@
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
+    "@types/mssql": "^12.3.0",
     "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
@@ -26,5 +28,10 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.7"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "mongodb": "^7.7.0",
+    "mssql": "^12.7.13",
+    "pg": "^8.23.1"
+  }
 }

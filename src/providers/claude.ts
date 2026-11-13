@@ -1,4 +1,5 @@
 import { SECRETS } from '../config.ts';
+import { TOOLS_TOKEN_ENV } from '../databases.ts';
 import { getSecret } from '../db.ts';
 import { env } from '../env.ts';
 import { safeEnv } from '../sh.ts';
@@ -33,6 +34,16 @@ function credentials(): NodeJS.ProcessEnv {
 export const mainResult = (events: Record<string, unknown>[]) =>
   events.findLast((e) => e.type === 'result' && (e.origin as { kind?: string } | undefined)?.kind !== 'task-notification');
 
+/** The MCP servers of a call: the browser's config file, and the platform's tools with this run's token. */
+function mcpConfig(req: ProviderRequest): string[] {
+  const configs = [
+    ...(req.browser ? [req.browser] : []),
+    // Claude Code expands the variable itself: the token stays out of the command line.
+    ...(req.tools ? [JSON.stringify({ mcpServers: { agentcowork: { type: 'http', url: req.tools.url, headers: { Authorization: `Bearer \${${TOOLS_TOKEN_ENV}}` } } } })] : []),
+  ];
+  return configs.length ? ['--mcp-config', ...configs] : [];
+}
+
 export async function runClaude<T>(req: ProviderRequest): Promise<ProviderResult<T>> {
   const args = [
     '-p',
@@ -45,16 +56,16 @@ export async function runClaude<T>(req: ProviderRequest): Promise<ProviderResult
     '--strict-mcp-config',
     ...(req.model ? ['--model', req.model] : []),
     ...(req.subagents ? ['--agents', JSON.stringify(req.subagents)] : []),
-    // Browser tools come only from the platform's own config (strict mode ignores every other MCP source).
-    ...(req.browser ? ['--mcp-config', req.browser] : []),
-    '--allowedTools', ...(req.mode === 'write' ? WRITE_TOOLS : READ_ONLY_TOOLS), ...(req.browser ? ['mcp__playwright'] : []),
+    // Browser and database tools come only from the platform's own config (strict mode ignores every other MCP source).
+    ...mcpConfig(req),
+    '--allowedTools', ...(req.mode === 'write' ? WRITE_TOOLS : READ_ONLY_TOOLS), ...(req.browser ? ['mcp__playwright'] : []), ...(req.tools ? ['mcp__agentcowork'] : []),
     // git diff/log/show can write a file (--output) or read any file (--no-index), wherever the flag goes.
     '--disallowedTools', ...NO_READ(), 'Bash(git * --output*)', 'Bash(git * --no-index*)', 'Bash(git diff --no-index:*)',
     ...(req.mode === 'write' ? [] : ['--append-system-prompt', READ_ONLY_HINT]),
   ];
   const out = await spawnStream('claude', args, {
     cwd: req.cwd,
-    env: safeEnv(credentials()),
+    env: safeEnv({ ...credentials(), ...(req.tools ? { [TOOLS_TOKEN_ENV]: req.tools.token } : {}) }),
     input: req.prompt,
     signal: req.run.signal,
     transcript: req.run.transcript(req.label),

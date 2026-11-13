@@ -46,10 +46,12 @@ flowchart LR
 
 Each project also has a **brain**: an Obsidian-compatible vault of lessons the agents learned (environments, databases, conventions, decisions). Every run reads it first; runs where people answered or reviewed, or a finding or failing build was fixed, add to it.
 
+A project can also list **databases** (SQL Server, PostgreSQL or MongoDB), each read-only or write. The developer agent and its reviewers query them through tools the platform serves (`db_list`, `db_schema`, `db_query`), and the steps that change code can validate a migration with `db_validate`: it runs twice in one transaction (the second run proves it is idempotent) that is always rolled back. A database change itself always ships as an idempotent script in a pull request. The connection URL is stored encrypted and no model sees it; results and errors are masked for it. Claude Code and Codex get the tools; Antigravity does not yet (its CLI only reads MCP servers from a global file).
+
 | Principle | How it is enforced |
 | --- | --- |
 | Gates, not trust | The platform runs verification itself. An independent reviewer checks plans and diffs, and the lead cannot dismiss it: disagreements park the run for a human. Every loop has a round limit. |
-| Edges as code | Runtimes get an allow-listed environment with **only their own credential**: never the GitHub or Jira tokens, which only the orchestrator holds. Reviews run read-only. Repository hooks and MCP configs are ignored. |
+| Edges as code | Runtimes get an allow-listed environment with **only their own credential**: never the GitHub or Jira tokens or a database URL, which only the orchestrator holds. Reviews run read-only. Repository hooks and MCP configs are ignored. |
 | Humans own decisions | The developer agent never merges. Questions go to the card in one batch, and the agent resumes when someone answers. |
 | Isolation | One container per company, one worktree per run. Read-only root filesystem, no Linux capabilities, `no-new-privileges`, non-root user. |
 | Kill switch | Any run, or all runs of an agent, can be stopped from the UI. Every action is in the audit log. |
@@ -124,7 +126,7 @@ To replace any of them, mount your own file or folder read-only at the same path
 | Home | Today | A setup checklist until the instance is ready, what waits for you, what runs, each agent's state and why it is off, recent runs, account limits |
 | Work | Inbox · Runs · Findings · Brain · Usage | What needs a decision, with its action on each row; run history with timelines, logs, transcripts and cleanup; audit findings over time; what agents learned per project; account limits, tokens and cost |
 | Team | One page per agent | Overview (state, on and dry run switches, Run now, Stop, last runs, its inbox), Settings, and its Prompts (read-only); the nav counts agents that are on but not working |
-| Setup | Projects · Accounts · General · Instructions · Activity | Repositories and test environments; GitHub, Jira and the agent runtimes (folded once connected); defaults; the shipped instructions, prompts and skills (read-only); audit log and recent server logs |
+| Setup | Projects · Accounts · General · Instructions · Activity | Repositories, test environments and databases; GitHub, Jira and the agent runtimes (folded once connected); defaults; the shipped instructions, prompts and skills (read-only); audit log and recent server logs |
 
 A bar under the navigation names the agents that are live (writing to GitHub and Jira) on every page.
 

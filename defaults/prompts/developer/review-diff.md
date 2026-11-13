@@ -22,11 +22,13 @@ Audit the change made for Jira issue {{key}} ("{{summary}}") before it becomes a
 
 {{brain}}
 
+{{databases}}
+
 ## Operations
 
 1. Read the diff of every changed repository and the code around it.
 2. Check it against the issue and the plan: root cause fixed, every caller covered, contracts between repositories consistent, tests that fail without the fix.
-3. Look for correctness bugs, security issues (injection, auth and access control, secrets), data loss, and missing error handling at trust boundaries. A database script must be idempotent: running it twice is safe, and a guard keeps every statement from failing or changing data on the second run.
+3. Look for correctness bugs, security issues (injection, auth and access control, secrets), data loss, and missing error handling at trust boundaries. A database script must be idempotent: running it twice is safe, and a guard keeps every statement from failing or changing data on the second run. When the project lists databases, check the script against the real schema with `db_schema` and `db_query`.
 4. Apply the criteria of your `code-rules` and `review-code` skills when available.
 5. When the diff changes UI, judge it with `ui-taste` (System-bound: its checklist and its list of generated looks) and `check-accessibility`, and run the skill's scanner on the changed UI files. A generic or off-system look is a minor finding; an inaccessible control is major.
 

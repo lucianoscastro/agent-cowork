@@ -47,6 +47,12 @@ RUN npm ci --no-audit --no-fund
 COPY ui ./ui
 RUN npm run build:ui
 
+# --- deps: the server's runtime dependencies (the database drivers), without the UI's build tools.
+FROM node:current-trixie-slim AS deps
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
 # --- runtime: Node (runs the agent and React/Node projects), pnpm, .NET SDK, git, gh and the three agent CLIs.
 FROM ${RUNTIME_IMAGE}
 # The .NET SDK majors installed, space-separated. A project's tests need its own major's runtime, which a newer
@@ -89,6 +95,7 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
 
 WORKDIR /app
 COPY package.json ./
+COPY --from=deps /build/node_modules ./node_modules
 COPY src ./src
 COPY defaults ./defaults
 # Shipped defaults must be readable by the non-root agent whatever modes the build context had.

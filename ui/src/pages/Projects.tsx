@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { api, type Project, saveSection, type SettingsResponse, type Stack, STACK_NAMES, type TestEnvironment } from '../api';
+import { api, type Project, type ProjectDatabase, saveSection, type SettingsResponse, type Stack, STACK_NAMES, type TestEnvironment } from '../api';
 import { useT } from '../i18n';
+import { ProjectDatabases } from './Databases';
 import { TestEnvironmentFields } from './TestEnvironment';
 
 const STACKS = Object.keys(STACK_NAMES) as Stack[];
 import { Badge, Button, Empty, Field, Lines, Loading, Message, PageHeader, Select, Text, useAction, useFetch, useUnsaved } from '../ui';
 
 type RepoRow = { repo: string; stack: Stack; verify: string[] };
-type ProjectDraft = { name: string; boardId: string; baseBranch: string; repos: RepoRow[]; environment?: TestEnvironment };
+type ProjectDraft = { name: string; boardId: string; baseBranch: string; repos: RepoRow[]; environment?: TestEnvironment; databases: ProjectDatabase[] };
 
 const toDraft = (p: Project): ProjectDraft => ({
   name: p.name,
@@ -15,9 +16,11 @@ const toDraft = (p: Project): ProjectDraft => ({
   baseBranch: p.baseBranch ?? '',
   repos: Object.values(p.repos).map((r) => ({ repo: r.repo, stack: r.stack, verify: r.verify ?? [] })),
   environment: p.environment,
+  databases: p.databases ?? [],
 });
 const fromDraft = (d: ProjectDraft): Project => ({
   name: d.name,
+  databases: d.databases.map((db) => ({ ...db, name: db.name.trim() })),
   boardId: d.boardId || undefined,
   baseBranch: d.baseBranch || undefined,
   // The server keys repositories by their folder (the repository name); any unique key works here.
@@ -133,7 +136,7 @@ export function Projects() {
       <PageHeader title="Projects">
         <Button
           onClick={() => {
-            setProjects([...projects, { name: 'New project', boardId: '', baseBranch: '', repos: [{ ...EMPTY_REPO }] }]);
+            setProjects([...projects, { name: 'New project', boardId: '', baseBranch: '', repos: [{ ...EMPTY_REPO }], databases: [] }]);
             setOpenAt(projects.length, true);
           }}
         >
@@ -157,7 +160,7 @@ export function Projects() {
             </span>
           </summary>
           <div className="row fields">
-            <Field label="Name" hint="Also the key of its stored test variables: after a rename, store them again.">
+            <Field label="Name" hint="Also the key of its stored test variables and database connections: after a rename, store them again.">
               <Text value={p.name} onChange={(name) => update(i, { ...p, name })} />
             </Field>
             <Field label="Jira board id" hint="The number in the board URL (…/boards/<id>). Empty: the developer skips this project.">
@@ -204,6 +207,14 @@ export function Projects() {
             env={p.environment}
             onChange={(environment) => update(i, { ...p, environment })}
             testVars={data.testVars[p.name] ?? {}}
+            onSecretSaved={reload}
+          />
+          <ProjectDatabases
+            project={p.name}
+            savedNames={(saved.find((s) => s.name === p.name)?.databases ?? []).map((d) => d.name)}
+            rows={p.databases}
+            onChange={(databases) => update(i, { ...p, databases })}
+            targets={data.databases[p.name] ?? {}}
             onSecretSaved={reload}
           />
           <ProjectActions onSave={() => saveAt(i)} onRemove={() => removeAt(i)} />

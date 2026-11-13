@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SECRETS } from '../config.ts';
+import { TOOLS_TOKEN_ENV } from '../databases.ts';
 import { getSecret } from '../db.ts';
 import { env } from '../env.ts';
 import { log, safeEnv } from '../sh.ts';
@@ -104,11 +105,16 @@ export async function runCodex<T>(req: ProviderRequest): Promise<ProviderResult<
     '--output-schema', schemaFile,
     '--output-last-message', outFile,
     ...(req.model ? ['--model', req.model] : []),
+    // The platform's tools: the token stays in the environment, out of the command line, and headless Codex
+    // refuses any tool call that would need an approval, so this server's tools are approved up front.
+    ...(req.tools
+      ? ['-c', `mcp_servers.agentcowork.url=${JSON.stringify(req.tools.url)}`, '-c', `mcp_servers.agentcowork.bearer_token_env_var="${TOOLS_TOKEN_ENV}"`, '-c', 'mcp_servers.agentcowork.default_tools_approval_mode="approve"']
+      : []),
     '-',
   ];
   const out = await spawnStream('codex', args, {
     cwd: req.cwd,
-    env: safeEnv(credentials()),
+    env: safeEnv({ ...credentials(), ...(req.tools ? { [TOOLS_TOKEN_ENV]: req.tools.token } : {}) }),
     input: req.prompt,
     signal: req.run.signal,
     transcript,

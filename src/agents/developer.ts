@@ -14,6 +14,7 @@ import { followUpTasks, type WatchedPr } from './pr-follow-up.ts';
 import { runVerify } from './verify.ts';
 import { notify } from '../notify.ts';
 import { brainContext, learning } from '../brain.ts';
+import { databasesPrompt, grantDatabases } from '../databases.ts';
 
 /** Failed CI logs linked from the card, for the project's repositories only (at most 3): agents plan without network access. */
 async function ciLogs(text: string, repos: string[]): Promise<string> {
@@ -194,6 +195,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
   const workspace = join(env.paths.work, 'worktrees', `${key}-${randomUUID().slice(0, 8)}`);
   const branch = `ai/${key}`;
   const repos: RepoCheckout[] = [];
+  // The project's databases: reads in every call, script validation (always rolled back) in the calls that change code.
+  const databases = await grantDatabases(run, 'developer', project);
   try {
     const fix = fixBranch(key);
     for (const r of Object.values(project.repos)) {
@@ -227,9 +230,10 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       reviewContext: '',
       plan: '',
       brain: await brainContext(project.name, workspace, `${issue.fields.summary}\n${description}`),
+      databases: databasesPrompt(project),
     };
     const lead = (label: string, prompt: string, schema: object, mode: 'read-only' | 'write', subagents?: Record<string, Subagent>) =>
-      runProvider(cfg.lead.provider, { run, label, prompt, schema, cwd: workspace, mode, model: cfg.lead.model, subagents });
+      runProvider(cfg.lead.provider, { run, label, prompt, schema, cwd: workspace, mode, model: cfg.lead.model, subagents, tools: mode === 'write' ? databases?.write : databases?.read });
     // The independent reviewers that are on (none, one or both) review in parallel; with both, each must pass.
     const reviewers = [cfg.reviewer, cfg.secondReviewer].map((r, i) => ({ ...r, i })).filter((r) => r.enabled);
     // A reviewer falling back takes the lead's or the other reviewer's provider only when no other is left.
@@ -238,7 +242,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       const reviews = await Promise.all(
         reviewers.map(async (r) => {
           const tag = r.i === 0 ? '' : '-2nd';
-          const { output } = await runProvider<Review>(r.provider, { run, label: `${label}${tag}`, prompt, schema: REVIEW_SCHEMA, cwd: workspace, mode: 'read-only', model: r.model, avoid });
+          const { output } = await runProvider<Review>(r.provider, { run, label: `${label}${tag}`, prompt, schema: REVIEW_SCHEMA, cwd: workspace, mode: 'read-only', model: r.model, avoid, tools: databases?.read });
           return { ...output, findings: output.findings.map((f) => (r.i === 0 ? f : { ...f, body: `[second reviewer] ${f.body}` })) };
         }),
       );
@@ -381,6 +385,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     }
     return { status: 'done', summary: `${dryRun ? 'would open' : 'opened'} ${urls.join(', ')}: ${built.title}`, data: { prs } };
   } finally {
+    databases?.revoke();
     for (const r of repos) await removeCheckout(r.work).catch(() => {});
     await rm(workspace, { recursive: true, force: true });
   }

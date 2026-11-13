@@ -52,9 +52,17 @@ export const hostOf = (url: string) => {
   }
 };
 
+/**
+ * A database the agents may use through the platform's tools (databases.ts). Its connection URL is a secret
+ * under `db.<project>.<name>` that no model ever sees. `write` lets the steps that change code validate
+ * scripts against it, always rolled back.
+ */
+export type ProjectDatabase = { name: string; access: 'read' | 'write'; description: string };
+
 export type Project = {
   name: string;
   environment?: TestEnvironment;
+  databases?: ProjectDatabase[];
   // The Jira board whose cards this project works on (the number in the board URL).
   boardId?: string;
   baseBranch?: string;
@@ -344,6 +352,25 @@ function validateEnvironment(v: unknown, where: string, repos: Record<string, un
   return env;
 }
 
+/** Where a project database's connection URL is stored. */
+export const dbSecretName = (project: string, name: string) => `db.${project}.${name}`;
+
+const DB_NAME = /^[a-z][a-z0-9_-]{0,39}$/;
+
+function validateDatabases(v: unknown, where: string): ProjectDatabase[] {
+  if (!Array.isArray(v) || v.length > 10) throw new Error(`${where} must be a list of at most 10 databases`);
+  const names = new Set<string>();
+  return v.map((d, k) => {
+    const w = `${where}[${k}]`;
+    const o = obj(d, w);
+    const name = str(o, 'name', w, { required: true, max: 40 });
+    if (!DB_NAME.test(name)) throw new Error(`${w}.name: lowercase letters, digits, - and _, starting with a letter`);
+    if (names.has(name)) throw new Error(`${where}: two databases are named "${name}"`);
+    names.add(name);
+    return { name, access: oneOf(o, 'access', w, ['read', 'write'] as const), description: str(o, 'description', w, { max: 500 }) };
+  });
+}
+
 /** Where a repository's test variables (one JSON object) are stored. */
 export const envSecretName = (project: string, repo: string) => `env.${project}.${repo}`;
 
@@ -386,6 +413,8 @@ export function validateProjects(v: unknown): Project[] {
       const env = validateEnvironment(o.environment, `${where}.environment`, repos);
       if (Object.keys(env.repos).length) out.environment = env;
     }
+    const databases = validateDatabases(o.databases ?? [], `${where}.databases`);
+    if (databases.length) out.databases = databases;
     // Stored by folder name, whatever key the client sent: the folder is always the repository's name.
     for (const r of Object.values(repos)) {
       const ro = obj(r, `${where}.repos`);

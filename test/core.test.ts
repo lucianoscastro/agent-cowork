@@ -9,7 +9,8 @@ import { reviewPasses, validPromotion } from '../src/agents/developer.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
-import { outputLanguage, parseTestVars, projectRepos, read, validateProjects, verifyCommands, write } from '../src/config.ts';
+import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, validateProjects, verifyCommands, write } from '../src/config.ts';
+import { databasesPrompt, dbEngine, dbTarget, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { getSecret, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
 import { adfToText, hasAnswer, toAdf } from '../src/integrations/jira.ts';
@@ -21,11 +22,11 @@ import { jwtClaims } from '../src/providers/account.ts';
 import { lastWords, parseLoginOutput, submitLoginCode, withProfileScope } from '../src/providers/login.ts';
 import { liveOutput, parseTranscriptLine } from '../src/live.ts';
 import { runsUsage, usageSummary } from '../src/usage.ts';
-import { describeChanges, flattenSecrets, maskSecrets, sanitizeHar, testSource } from '../src/agents/sentinel.ts';
+import { describeChanges, flattenSecrets, sanitizeHar, testSource } from '../src/agents/sentinel.ts';
 import { detectSuite, envRefs, isolate, parseCucumberJson, parseJunit, parsePlaywrightJson, testLabel } from '../src/agents/suite.ts';
 import { getRun, type Run, withRun } from '../src/runs.ts';
 import { runVerify } from '../src/agents/verify.ts';
-import { forEachLimit, renderPrompt, run as sh, safeEnv, withLock } from '../src/sh.ts';
+import { forEachLimit, maskSecrets, renderPrompt, run as sh, safeEnv, withLock } from '../src/sh.ts';
 
 const KEY = 'test-secret-key-0123456789';
 openDb(mkdtempSync(join(tmpdir(), 'acw-db-')), KEY);
@@ -875,4 +876,104 @@ test('validPromotion: only two different branch names of a repository of the pro
   assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: 'develop', to: 'develop' }), false);
   assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: '--force', to: 'qa' }), false);
   assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: 'develop', to: 'qa..main' }), false);
+});
+
+test('databases: the engine and target of a connection, never its credentials', () => {
+  assert.equal(dbEngine('postgresql://u:p@h/db'), 'postgres');
+  assert.equal(dbEngine('mongodb+srv://u:p@cluster.acme.test/shop'), 'mongodb');
+  assert.equal(dbEngine('Server=tcp:h,1433;Database=shop;User Id=u;Password=p;'), 'sqlserver');
+  assert.equal(dbEngine('mysql://h/db'), undefined);
+  assert.deepEqual(dbTarget('sqlserver://u:p@db.acme.test:1433/shop?encrypt=true'), { engine: 'sqlserver', host: 'db.acme.test:1433', database: 'shop' });
+  assert.deepEqual(dbTarget('Data Source=db.acme.test;Initial Catalog=shop;User ID=app;Password=S3cret;'), { engine: 'sqlserver', host: 'db.acme.test', database: 'shop' });
+  assert.deepEqual(dbTarget('mongodb://h1:27017,h2:27017/shop?replicaSet=rs0'), { engine: 'mongodb', host: 'h1:27017,h2:27017', database: 'shop' });
+});
+
+test('databases: errors and results never carry the credentials', () => {
+  const url = 'postgresql://app_user:p%40ss-W0rd@db.acme.test/shop';
+  const text = redact(`password authentication failed for user "app_user" (p@ss-W0rd) at ${url}`, url);
+  assert.ok(!text.includes('ss-W0rd') && !text.includes('app_user'), text);
+  const ado = 'Server=h;Database=d;User Id=svc_reader;Password=Tr1cky-pw;';
+  assert.ok(!redact('login failed for svc_reader; Password=Tr1cky-pw', ado).includes('Tr1cky'));
+  assert.equal(redact('see postgres://someone:other@host/db', url), 'see postgres://[REDACTED]@host/db');
+  // Escaped in JSON, and short: still masked.
+  const quoted = 'postgresql://app:pa%22s%5Cs@h/db';
+  assert.ok(!redact(JSON.stringify({ v: 'pa"s\\s' }), quoted).includes('pa\\"s'));
+  assert.ok(!redact('x=Zq9', 'postgresql://app:Zq9@h/db').includes('Zq9'));
+});
+
+test('databases: SQL that escapes the transaction or runs elsewhere is refused', () => {
+  assert.match(sqlRefusal("EXEC('COM' + 'MIT')", 'sqlserver', false) ?? '', /dynamic SQL/);
+  assert.ok(sqlRefusal('DECLARE @p sysname = N\'sp_executesql\'; EXEC @p N\'SELECT 1\'', 'sqlserver', false));
+  assert.ok(sqlRefusal("SELECT * FROM OPENROWSET('SQLNCLI', 'Server=.;', 'UPDATE t SET a = 1')", 'sqlserver', true));
+  assert.ok(sqlRefusal('EXEC dbo.SpGetTemplate 29', 'sqlserver', true));
+  assert.equal(sqlRefusal('EXEC dbo.SpRefresh;\nGO\nCREATE OR ALTER VIEW v AS SELECT 1 AS a', 'sqlserver', false), undefined);
+  assert.ok(sqlRefusal("SELECT dblink_exec('dbname=x', 'UPDATE t SET a = 1')", 'postgres', true));
+  assert.ok(sqlRefusal("COPY (SELECT 1) TO PROGRAM 'curl x'", 'postgres', true));
+  assert.equal(sqlRefusal('SELECT program, executed FROM courses', 'postgres', true), undefined);
+});
+
+test('databases: transaction control is refused in code and in dynamic SQL, never in comments', () => {
+  assert.ok(transactionControl('UPDATE t SET a = 1; COMMIT', 'sqlserver'));
+  assert.ok(transactionControl("EXEC('COMMIT')", 'sqlserver'));
+  // A -- or /* inside a string, a dollar quote or a bracketed name starts no comment.
+  assert.ok(transactionControl("SELECT 'x--'; COMMIT", 'postgres'));
+  assert.ok(transactionControl('SELECT $$ -- $$; COMMIT', 'postgres'));
+  assert.ok(transactionControl('SELECT [a--b]; COMMIT', 'sqlserver'));
+  assert.ok(transactionControl('UPDATE t SET a = 1;\nEND;', 'postgres'));
+  assert.ok(transactionControl('BEGIN TRANSACTION; UPDATE t SET a = 1', 'sqlserver'));
+  assert.equal(transactionControl('-- rollback: restore the old subject\nUPDATE t SET a = 1 /* commit later */', 'sqlserver'), undefined);
+  assert.equal(transactionControl('IF @x = 1 BEGIN SELECT CASE WHEN a = 1 THEN 2 END FROM t; END;', 'sqlserver'), undefined);
+  assert.equal(transactionControl('DO $$ BEGIN UPDATE t SET a = 1; END $$;', 'postgres'), undefined);
+  assert.equal(transactionControl('SELECT commit_date, last_commit FROM t', 'postgres'), undefined);
+});
+
+test('databases: GO splits SQL Server batches', () => {
+  assert.deepEqual(splitBatches('CREATE OR ALTER PROCEDURE p AS SELECT 1;\nGO\nSELECT 2\ngo 2\n'), ['CREATE OR ALTER PROCEDURE p AS SELECT 1;', 'SELECT 2', 'SELECT 2']);
+  assert.deepEqual(splitBatches("SELECT 'GO'\nSELECT 1 -- GO"), ["SELECT 'GO'\nSELECT 1 -- GO"]);
+});
+
+test('databases: MongoDB commands come from an allow-list', () => {
+  assert.equal(mongoRefusal({ find: 'users', filter: {} }, false), undefined);
+  assert.ok(mongoRefusal({ delete: 'users', deletes: [] }, false));
+  assert.equal(mongoRefusal({ delete: 'users', deletes: [] }, true), undefined);
+  assert.ok(mongoRefusal({ aggregate: 'users', pipeline: [{ $merge: 'x' }] }, true));
+  assert.ok(mongoRefusal({ dropDatabase: 1 }, true));
+  assert.ok(mongoRefusal({ insert: 'users', documents: [], lsid: { id: 1 } }, true));
+  assert.ok(mongoRefusal({ find: 'users', $db: 'admin' }, false));
+});
+
+test('databases: a project names each database once, with its access', () => {
+  const base = { name: 'Shop', repos: { web: { repo: 'acme/web', stack: 'react' } } };
+  const [p] = validateProjects([{ ...base, databases: [{ name: 'dev-api', access: 'write', description: 'dev' }] }]);
+  assert.deepEqual(p.databases, [{ name: 'dev-api', access: 'write', description: 'dev' }]);
+  assert.equal(validateProjects([base])[0].databases, undefined);
+  assert.throws(() => validateProjects([{ ...base, databases: [{ name: 'Dev API', access: 'read' }] }]), /lowercase/);
+  assert.throws(() => validateProjects([{ ...base, databases: [{ name: 'a', access: 'admin' }] }]), /access/);
+  assert.throws(() => validateProjects([{ ...base, databases: [{ name: 'a', access: 'read' }, { name: 'a', access: 'read' }] }]), /two databases/);
+});
+
+test('databases: a run gets read tools, validation only with write, and nothing after revoke', async () => {
+  const project = { name: 'DbShop', repos: {}, databases: [{ name: 'dev', access: 'write' as const, description: 'Dev data' }, { name: 'none', access: 'read' as const, description: '' }] };
+  assert.equal(await grantDatabases({} as Run, 'developer', project), undefined);
+  assert.equal(databasesPrompt(project), '');
+  setSecret(dbSecretName('DbShop', 'dev'), 'postgresql://app:Pw-for-test@127.0.0.1:1/shop');
+  assert.match(databasesPrompt(project), /`dev` \(PostgreSQL, write\): Dev data/);
+  assert.doesNotMatch(databasesPrompt(project), /`none`|Pw-for-test/);
+  const events: unknown[] = [];
+  const grant = (await grantDatabases({ id: 0, event: (...e: unknown[]) => events.push(e) } as unknown as Run, 'developer', project))!;
+  const rpc = async (server: { url: string; token: string }, method: string, params?: object) => {
+    const res = await fetch(server.url, { method: 'POST', headers: { authorization: `Bearer ${server.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+    return { status: res.status, body: res.status === 200 ? ((await res.json()) as { result: { tools?: { name: string }[]; content?: { text: string }[]; isError?: boolean } }) : undefined };
+  };
+  const names = async (server: typeof grant.read) => (await rpc(server, 'tools/list')).body?.result.tools?.map((t) => t.name);
+  assert.deepEqual(await names(grant.read), ['db_list', 'db_schema', 'db_query']);
+  assert.deepEqual(await names(grant.write), ['db_list', 'db_schema', 'db_query', 'db_validate']);
+  assert.equal((await rpc(grant.read, 'tools/call', { name: 'db_validate', arguments: { database: 'dev', script: 'SELECT 1' } })).body?.result.isError, true);
+  // Nothing listens on port 1: the failure comes back to the model without the credentials.
+  const failed = (await rpc(grant.read, 'tools/call', { name: 'db_query', arguments: { database: 'dev', query: 'SELECT 1' } })).body?.result;
+  assert.equal(failed?.isError, true);
+  assert.ok(!JSON.stringify([failed, events]).includes('Pw-for-test'));
+  assert.equal((await rpc({ url: grant.read.url, token: 'forged' }, 'tools/list')).status, 401);
+  grant.revoke();
+  assert.equal((await rpc(grant.write, 'tools/list')).status, 401);
 });

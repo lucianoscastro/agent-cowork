@@ -31,6 +31,8 @@ Resolve Jira issue {{key}} of the project "{{project}}": "{{summary}}". Fix the 
 
 {{brain}}
 
+{{databases}}
+
 ## Operations
 
 1. In each repository you change, read its agent instructions (`CLAUDE.md`, `AGENTS.md`) and README, and follow their conventions.
@@ -41,6 +43,7 @@ Resolve Jira issue {{key}} of the project "{{project}}": "{{summary}}". Fix the 
 5. Add or update tests for the change. Use your skills where they apply (`code-rules`, `tdd-workflow`, `backend-patterns`, `frontend-patterns`).
    - When the change builds or alters UI (a screen, page, form, component or style), follow `ui-taste` in its System-bound mode: the repository's own tokens and components are the vocabulary, and the work ends with its scanner and its checklist. Add `design-system` when tokens change and `check-accessibility` for what people interact with.
 6. Install dependencies and run every "must pass" command of each repository you changed until they all pass.
+7. When you wrote a database script and the project lists a database marked write, run it through `db_validate`: both runs must succeed and the second must change nothing. Report the result in your summary.
 
 ## Plan B
 
@@ -54,7 +57,7 @@ Resolve Jira issue {{key}} of the project "{{project}}": "{{summary}}". Fix the 
 - Change only the repositories the issue needs. Leave the others untouched.
 - Do NOT commit, push, or open a pull request. Leave your changes in the working trees.
 - Never weaken, skip or delete tests, and never change build, lint, test or CI configuration to get a pass.
-- Never write to databases or cloud resources, and never put secrets in code.
+- Never write to databases or cloud resources (`db_validate` always rolls back), and never put secrets in code.
 
 ## Done
 

@@ -23,6 +23,8 @@ Review the implementation plan for Jira issue {{key}} ("{{summary}}") before any
 
 {{brain}}
 
+{{databases}}
+
 ## Operations
 
 1. Read the code the plan mentions, and check the plan against it.

@@ -5,9 +5,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, normalize, resolve } from 'node:path';
 import { AGENTS, agentStatus, forceAgent } from './agents/status.ts';
 import { asset, type AssetSource, DEFAULTS_DIR } from './assets.ts';
-import { type AgentId, DEFAULTS, envSecretName, PROVIDERS, type Project, type ProviderId, read, SECRETS, type SectionKey, parseTestVars, write } from './config.ts';
+import { type AgentId, dbSecretName, DEFAULTS, envSecretName, PROVIDERS, type Project, type ProviderId, read, SECRETS, type SectionKey, parseTestVars, write } from './config.ts';
 import { brainDir, brainSlug, listNotes } from './brain.ts';
 import { safeEqual, signSession, verifySession } from './crypto.ts';
+import { DB_ENGINES, dbEngine, dbTarget, probeDatabase } from './databases.ts';
 import { audit, auditLog, deleteSecret, getSecret, Items, itemsByStatus, needsPerson, secretNames, setSecret } from './db.ts';
 import { env } from './env.ts';
 import { applyGithubEnv, testGithub } from './integrations/github.ts';
@@ -170,6 +171,11 @@ route('GET', '/api/settings', () => ({
   sections: Object.fromEntries((Object.keys(DEFAULTS) as SectionKey[]).map((k) => [k, read(k)])),
   secrets: Object.fromEntries([...ALLOWED_SECRETS].map((name) => [name, secretNames().includes(name)])),
   testVars: Object.fromEntries(read('projects').items.map((p) => [p.name, Object.fromEntries(Object.values(p.repos).map((r) => [r.repo, testVarNames(p.name, r.repo)]))])),
+  // Where each stored database connection points (engine, host, database), never the URL itself.
+  databases: Object.fromEntries(read('projects').items.map((p) => [p.name, Object.fromEntries((p.databases ?? []).flatMap((d) => {
+    const target = dbTarget(getSecret(dbSecretName(p.name, d.name)) ?? '');
+    return target ? [[d.name, { ...target, engine: DB_ENGINES[target.engine] }]] : [];
+  }))])),
   providers: Object.fromEntries(PROVIDERS.map((p) => [p, { ...providerStatus(p), account: accountInfo(p) }])),
   agents: Object.fromEntries(AGENTS.map((a) => [a, agentStatus(a)])),
   assets: assetsInfo(),
@@ -252,6 +258,48 @@ route('POST', '/api/env-secrets/delete', async ({ body, user }) => {
   deleteSecret(name);
   audit(user, 'secret.delete', name);
   return { ok: true };
+});
+
+/** A database of a saved project: its connection is stored only for a database the project names. */
+const projectDatabase = (project: Project, name: unknown) => {
+  const found = (project.databases ?? []).find((d) => d.name === name);
+  if (!found) throw new HttpError(400, 'Save the project with this database first');
+  return found;
+};
+
+/** A database connection URL: stored encrypted, never returned; only the platform's database tools use it. */
+route('PUT', '/api/db-secrets', async ({ body, user }) => {
+  const b = (await body()) as { project?: unknown; name?: unknown; value?: unknown };
+  const project = savedProject(b.project);
+  const name = dbSecretName(project.name, projectDatabase(project, b.name).name);
+  const value = str(b.value, 'value').trim();
+  if (value.length > 4000) throw new HttpError(400, 'Value too long');
+  if (!dbEngine(value)) throw new HttpError(400, 'Use a postgresql://, mongodb:// or sqlserver:// URL, or a SQL Server connection string (Server=…;Database=…)');
+  if (dbEngine(value) === 'mongodb' && !dbTarget(value)?.database) throw new HttpError(400, 'Name the database in the MongoDB URL: mongodb://host/<database>');
+  setSecret(name, value);
+  audit(user, 'secret.set', name);
+  return { ok: true };
+});
+route('POST', '/api/db-secrets/delete', async ({ body, user }) => {
+  const b = (await body()) as { project?: unknown; name?: unknown };
+  const project = savedProject(b.project);
+  const name = dbSecretName(project.name, projectDatabase(project, b.name).name);
+  deleteSecret(name);
+  audit(user, 'secret.delete', name);
+  return { ok: true };
+});
+/** Connects with the stored URL and reports the server and whether the login can write (errors carry no credential). */
+route('POST', '/api/databases/test', async ({ body }) => {
+  const b = (await body()) as { project?: unknown; name?: unknown };
+  const project = savedProject(b.project);
+  const db = projectDatabase(project, b.name);
+  const url = getSecret(dbSecretName(project.name, db.name));
+  if (!url) throw new HttpError(400, 'Store the connection URL first');
+  try {
+    return { ...(await probeDatabase(url)), access: db.access };
+  } catch (err) {
+    throw new HttpError(400, (err as Error).message);
+  }
 });
 
 route('DELETE', '/api/secrets/:name', ({ user }, [name]) => {

@@ -51,6 +51,15 @@ export async function run(cmd: string, args: string[], opts: RunOptions = {}): P
   }
 }
 
+export const REDACTED = '[REDACTED]';
+
+/** Masks every secret value that appears in a text (logs, a serialized HAR, a database error). */
+export function maskSecrets(text: string, secrets: string[]): string {
+  let out = text;
+  for (const v of secrets.filter((x) => x.length >= 4).sort((a, b) => b.length - a.length)) out = out.split(v).join(REDACTED);
+  return out;
+}
+
 // Untrusted code (repo scripts, agent runtimes) gets an allow-listed environment: never the GitHub,
 // Jira or provider credentials the orchestrator holds.
 const SAFE_ENV = /^(PATH|HOME|LANG|LC_\w+|TZ|TMPDIR|TERM|DOTNET_\w+|NUGET_PACKAGES|npm_config_\w+|PLAYWRIGHT_BROWSERS_PATH|GIT_(AUTHOR|COMMITTER)_\w+)$/;

@@ -95,12 +95,18 @@ export type SuiteSetup = {
 export type ResolvedSuite = SuiteSetup & { repo: string; branch: string };
 export type RepoEnvironment = { baseUrl: string; branch?: string; e2e: boolean; explore: boolean };
 export type TestEnvironment = { repos: Record<string, RepoEnvironment> };
+/** A database the agents may use; its connection URL is a separate secret. */
+export type ProjectDatabase = { name: string; access: 'read' | 'write'; description: string };
+/** Where a stored connection points: never the URL itself. */
+export type DatabaseTarget = { engine: string; host: string; database: string };
+
 export type Project = {
   name: string;
   boardId?: string;
   baseBranch?: string;
   repos: Record<string, { repo: string; stack: Stack; verify?: string[] }>;
   environment?: TestEnvironment;
+  databases?: ProjectDatabase[];
 };
 
 /** Each agent goes live on its own; in dry run it writes nothing to GitHub or Jira. */
@@ -172,6 +178,8 @@ export type SettingsResponse = {
   secrets: Record<string, boolean>;
   /** By project, then repository: the names of its stored test variables. */
   testVars: Record<string, Record<string, string[]>>;
+  /** By project, then database name: where its stored connection points. */
+  databases: Record<string, Record<string, DatabaseTarget>>;
   providers: Record<ProviderId, { ready: boolean; reason?: string; authMethod: string; account?: AccountInfo }>;
   agents: Record<AgentId, { on: boolean; reason?: string; paused?: boolean }>;
   assets: {

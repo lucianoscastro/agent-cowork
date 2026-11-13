@@ -10,7 +10,7 @@ import { gh, ghJson } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
 import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
-import { checkout, log, removeCheckout, renderPrompt, withLock } from '../sh.ts';
+import { checkout, log, maskSecrets, REDACTED, removeCheckout, renderPrompt, withLock } from '../sh.ts';
 import { branchOf, isolate, parseReport, type ResolvedSuite, resolveSuite, type TestResult, testLabel } from './suite.ts';
 import { streamCommand } from './verify.ts';
 import { takeForce } from './status.ts';
@@ -67,14 +67,6 @@ export function flattenSecrets(vars: Record<string, string>): Record<string, str
 }
 
 const SENSITIVE = /pass|pwd|token|secret|key|auth|session|cookie|otp|code|cpf|card/i;
-const REDACTED = '[REDACTED]';
-
-/** Masks every secret value that appears in a text (logs, a serialized HAR). Exported for tests. */
-export function maskSecrets(text: string, secrets: string[]): string {
-  let out = text;
-  for (const v of secrets.filter((x) => x.length >= 4).sort((a, b) => b.length - a.length)) out = out.split(v).join(REDACTED);
-  return out;
-}
 
 type HarPair = { name: string; value: string };
 type HarMessage = { headers?: HarPair[]; cookies?: HarPair[]; queryString?: HarPair[]; postData?: { text?: string; params?: HarPair[] } };

@@ -26,6 +26,8 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
 
 {{brain}}
 
+{{databases}}
+
 ## Operations
 
 0. Decide the card's `kind`. You never get GitHub credentials; the platform acts on what you declare:
@@ -35,7 +37,7 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
    - **handoff**: what the card needs can only be done by a person with access agents do not have (cloud or infrastructure settings, secrets, third-party consoles, merging or deploying). Write in `plan`, in {{language}}, the exact checklist for that person.
    Never declare promote, answer or handoff to avoid a code change the card asks for.
 1. Read each repository's agent instructions (`CLAUDE.md`, `AGENTS.md`) and README.
-2. Trace the real flow end to end for this issue. For a bug, find the root cause and every caller of the code you will change.
+2. Trace the real flow end to end for this issue. For a bug, find the root cause and every caller of the code you will change. When the answer depends on data or on the schema actually deployed and the project lists databases, check it with the database tools instead of assuming.
 3. Write the plan:
    - **Approach**: the root cause or design, in a few sentences.
    - **Changes**: per repository, the files and functions to change, and why.

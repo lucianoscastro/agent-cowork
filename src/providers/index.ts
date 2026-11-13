@@ -5,6 +5,7 @@ import { asset } from '../assets.ts';
 import { type AuthMethod, PROVIDERS, type ProviderId, read, SECRETS } from '../config.ts';
 import { getSecret, LIMIT_ERROR } from '../db.ts';
 import { env } from '../env.ts';
+import type { ToolServer } from '../databases.ts';
 import type { Run } from '../runs.ts';
 import { run as sh } from '../sh.ts';
 import { refreshUsage, runAgy } from './agy.ts';
@@ -26,6 +27,8 @@ export type ProviderRequest = {
   subagents?: Record<string, Subagent>;
   /** An MCP config file giving the model browser tools (Playwright MCP); Claude only. */
   browser?: string;
+  /** The platform's own tools (the project's databases) for this call; runtimes that cannot reach them work without. */
+  tools?: ToolServer;
   /** Providers to fall back to only after the others, e.g. the other reviewer's, to keep reviews independent. */
   avoid?: ProviderId[];
 };
