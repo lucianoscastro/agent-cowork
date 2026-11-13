@@ -1,5 +1,5 @@
 import { api, type Overview, type SettingsResponse } from '../api';
-import { AGENT_NAMES, Badge, reasonText, Button, Card, duration, Empty, Loading, RunStatus, Time, useFetch } from '../ui';
+import { AGENT_NAMES, Badge, Button, Card, duration, Empty, Loading, Mark, needsAttention, reasonText, RunStatus, Time, type Tone, useFetch } from '../ui';
 import { useT } from '../i18n';
 import { type Accounts, type Limits, LimitsCard } from './Usage';
 
@@ -21,7 +21,6 @@ export function Home() {
   const { data: usage, reload: reloadUsage } = useFetch<{ limits: Limits; accounts: Accounts }>('/usage', 60_000);
   if (!data) return <Loading error={error} retry={reload} />;
   const steps = settings ? setupSteps(settings) : [];
-  const off = data.agents.filter((a) => !a.on && a.reason !== 'Disabled');
   return (
     <>
       <header className="hero">
@@ -34,9 +33,7 @@ export function Home() {
           <ol className="checklist">
             {steps.map((s) => (
               <li key={s.text}>
-                <span className={`mark ${s.done ? 'ok' : 'muted'}`} aria-label={s.done ? t('done') : t('to do')}>
-                  {s.done ? '✓' : '○'}
-                </span>
+                <Mark tone={s.done ? 'ok' : 'idle'} label={s.done ? t('done') : t('to do')} />
                 {s.done ? <span className="muted">{t(s.text)}</span> : <a href={s.href}>{t(s.text)}</a>}
               </li>
             ))}
@@ -86,35 +83,35 @@ export function Home() {
         </Card>
       )}
 
-      <section className="stack">
-        <h2 className="section-title">{t('Team')}</h2>
-        {off.length > 0 && (
-          <p className="reason">
-            {off.length > 1
-              ? t('{n} enabled agents are not running: open each to see why.', { n: off.length })
-              : t('1 enabled agent is not running: open it to see why.')}
-          </p>
-        )}
-        <div className="agents-grid compact">
-          {data.agents.map((a) => (
-            <a key={a.id} href={`#/agents/${a.id}`} className="card agent-card">
-              <h2>
-                {AGENT_NAMES[a.id]}
-                <span className="row tight">
-                  {a.polling && <Badge tone="info">working</Badge>}
-                  {a.on ? <Badge tone="ok">on</Badge> : <Badge tone="muted">off</Badge>}
-                  {a.on && (data.live.includes(a.id) ? <Badge tone="warn">live</Badge> : <Badge tone="muted">dry run</Badge>)}
-                </span>
-              </h2>
-              {!a.on && a.reason !== 'Disabled' && <p className="why">{reasonText(t, a.reason)}</p>}
-              {a.on && a.lastError && <p className="why">{t('Last poll failed: {error}', { error: a.lastError.message })}</p>}
-              <p className="when">
-                {t('Last poll')} <Time iso={a.lastPoll} />
-              </p>
-            </a>
-          ))}
-        </div>
-      </section>
+      <Card title="Team" actions={<a href="#/agents">{t('All agents')}</a>}>
+        {/* One line per agent, like a CI checks list: mark, name, what it is doing or why not, last poll. */}
+        <ul className="checks">
+          {data.agents.map((a) => {
+            const tone: Tone | 'idle' = a.on ? (a.lastError ? 'bad' : 'ok') : needsAttention(a) ? 'warn' : 'idle';
+            const state = a.polling
+              ? t('working')
+              : a.on
+                ? a.lastError
+                  ? t('Last poll failed: {error}', { error: a.lastError.message })
+                  : t(data.live.includes(a.id) ? 'live' : 'dry run')
+                : a.reason === 'Disabled'
+                  ? t('off')
+                  : reasonText(t, a.reason);
+            return (
+              <li key={a.id}>
+                <a className="check" href={`#/agents/${a.id}`}>
+                  <Mark tone={tone} />
+                  <span className="check-name">{AGENT_NAMES[a.id]}</span>
+                  <span className={`check-state ${tone}`}>{state}</span>
+                  <span className="check-time">
+                    <Time iso={a.lastPoll} />
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
 
       <Card title="Recent runs" actions={<a href="#/runs">{t('All runs')}</a>}>
         {data.recent.length === 0 ? (

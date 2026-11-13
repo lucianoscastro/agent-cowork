@@ -151,9 +151,9 @@ export function Projects() {
           <summary>
             <strong>{p.name || t('Unnamed project')}</strong>
             <span className="muted small">
-              {p.repos.map((r) => r.repo || t('(no repository)')).join(' · ')}
-              {` · ${p.boardId ? t('board {id}', { id: p.boardId }) : t('no board')}`}
-              {p.baseBranch && ` · ${t('base {branch}', { branch: p.baseBranch })}`}
+              {p.repos.map((r) => r.repo || t('(no repository)')).join(', ')}
+              {`; ${p.boardId ? t('board {id}', { id: p.boardId }) : t('no board')}`}
+              {p.baseBranch && `; ${t('base {branch}', { branch: p.baseBranch })}`}
             </span>
           </summary>
           <div className="row fields">

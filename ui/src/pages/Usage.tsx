@@ -46,7 +46,7 @@ function Meter({ w }: { w: Window }) {
           <b>{w.usedPercent}%</b> {t('used')}
           {w.resetsAt && (
             <>
-              {' · '}
+              {', '}
               {stale ? t('reset') : t('resets')} <Time iso={w.resetsAt} />
             </>
           )}
@@ -95,7 +95,7 @@ export function LimitsCard({ limits, accounts, onChange, compact }: { limits: Li
                 {PROVIDER_NAMES[id]} {l?.plan && <Badge tone="muted">{l.plan}</Badge>}{' '}
                 {blocked(l) ? (
                   <Badge tone="bad">
-                    {t('Paused · back')} <Time iso={l!.limitedUntil} />
+                    {t('Paused, back')} <Time iso={l!.limitedUntil} />
                   </Badge>
                 ) : (
                   l && <Badge tone="ok">Available</Badge>
@@ -132,8 +132,8 @@ function Tile({ label, row }: { label: string; row: Row }) {
       <p className="tile-value">{formatTokens(tokens(row))}</p>
       <p className="tile-sub">
         {row.runs === 1
-          ? t('tokens · {cost} estimated · 1 run', { cost: formatCost(row.cost) })
-          : t('tokens · {cost} estimated · {n} runs', { cost: formatCost(row.cost), n: row.runs })}
+          ? t('tokens in 1 run, {cost} estimated', { cost: formatCost(row.cost) })
+          : t('tokens in {n} runs, {cost} estimated', { cost: formatCost(row.cost), n: row.runs })}
       </p>
     </section>
   );

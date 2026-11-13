@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, AUDIT_CATEGORIES, type AuditCategory } from '../api';
 import { type T, useT } from '../i18n';
-import { Badge, Button, Card, Empty, Field, Loading, PageHeader, Select, Time, useFetch } from '../ui';
+import { Badge, Button, Card, Empty, Field, Loading, Mark, PageHeader, Select, Time, type Tone, useFetch } from '../ui';
 
 type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 type Verdict = 'block' | 'fix_first' | 'review' | 'clear';
@@ -40,9 +40,10 @@ const RANK: Verdict[] = ['block', 'fix_first', 'review', 'clear'];
 const verdictLabel = (t: T, category: AuditCategory, v: Verdict) =>
   t(
     (category === 'security'
-    ? { block: '🔴 Do not ship', fix_first: '🟠 Fix before shipping', review: '🟡 Review pending', clear: '🟢 No confirmed blocker' }
-    : { block: '🔴 Critical issues', fix_first: '🟠 Fix soon', review: '🟡 Review pending', clear: '🟢 No confirmed issue' })[v],
+    ? { block: 'Do not ship', fix_first: 'Fix before shipping', review: 'Review pending', clear: 'No confirmed blocker' }
+    : { block: 'Critical issues', fix_first: 'Fix soon', review: 'Review pending', clear: 'No confirmed issue' })[v],
   );
+const VERDICT_TONES: Record<Verdict, Tone> = { block: 'bad', fix_first: 'warn', review: 'info', clear: 'ok' };
 
 /** The latest audit of each category, and the worst verdict among them (for the repository list). */
 function latestPerCategory(audits: AuditSummary[]): AuditSummary[] {
@@ -256,7 +257,7 @@ export function Findings({ repo }: { repo?: string }) {
                       className={`asset-item${r.repo === current?.repo ? ' active' : ''}`}
                     >
                       <span>{r.repo.split('/')[1]}</span>
-                      <span className="small">{r.audits.length ? verdictLabel(t, 'security', worst(latestPerCategory(r.audits)).verdict).split(' ')[0] : '—'}</span>
+                      {r.audits.length ? <Mark tone={VERDICT_TONES[worst(latestPerCategory(r.audits)).verdict]} label={verdictLabel(t, 'security', worst(latestPerCategory(r.audits)).verdict)} /> : <span className="small">—</span>}
                     </a>
                   ))}
               </section>
@@ -300,7 +301,9 @@ export function Findings({ repo }: { repo?: string }) {
                               {a.base}@{a.sha.slice(0, 7)}
                             </code>
                           </td>
-                          <td>{verdictLabel(t, a.category, a.verdict)}</td>
+                          <td>
+                            <Mark tone={VERDICT_TONES[a.verdict]} /> {verdictLabel(t, a.category, a.verdict)}
+                          </td>
                           <td>
                             <Counts counts={a.counts} />
                           </td>

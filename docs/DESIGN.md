@@ -1,7 +1,7 @@
 ---
 version: 1
 name: agentcowork-design
-description: A calm, content-first admin console. Parchment canvas, white hairline cards, near-black ink and a single Action Blue for everything clickable. Chrome recedes — a thin black global nav and a frosted sub-nav — so the state of the agents and the work waiting for a person read first. No gradients, no shadows on chrome.
+description: An operations console for the person who runs a team of coding agents, read like a CI checks list. Every state is a check row (a status mark, words, a time in tabular figures); a solid two-row header; neutral canvas, white hairline cards, near-black ink and one blue for everything clickable. No glass, no gradients, no shadows on chrome.
 
 colors:
   primary: "#0066cc"
@@ -13,8 +13,10 @@ colors:
   surface: "#ffffff"
   hairline: "#e0e0e0"
   code: "#f0f0f2"
-  nav: "#000000"
-  on-nav: "#f5f5f7"
+  nav: "#ffffff"
+  on-nav: "#1d1d1f"
+  nav-muted: "#6e6e73"
+  dark-nav: "#161618"
   on-primary: "#ffffff"
   ok: "#1d7a4b"
   warn: "#9a6200"
@@ -27,8 +29,7 @@ colors:
 
 typography:
   family: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif"
-  display: { fontSize: 40px, fontWeight: 600, lineHeight: 1.1, letterSpacing: -0.374px }
-  page-title: { fontSize: 34px, fontWeight: 600, lineHeight: 1.1, letterSpacing: -0.374px }
+  page-title: { fontSize: 26px, fontWeight: 600, lineHeight: 1.15, letterSpacing: -0.2px }
   section-title: { fontSize: 24px, fontWeight: 600, letterSpacing: -0.374px }
   sub-nav-title: { fontSize: 21px, fontWeight: 600, letterSpacing: 0.231px }
   lead: { fontSize: 17px, fontWeight: 400, lineHeight: 1.47 }
@@ -42,7 +43,7 @@ typography:
 rounded:
   sm: 8px
   md: 12px
-  lg: 18px
+  lg: 10px
   pill: 9999px
 
 spacing:
@@ -56,14 +57,15 @@ spacing:
 
 components:
   global-nav: { backgroundColor: "{colors.nav}", textColor: "{colors.on-nav}", typography: "{typography.nav-link}", height: 44px }
-  sub-nav: { backgroundColor: "canvas at 80% + backdrop blur", textColor: "{colors.ink}", height: 52px }
+  sub-nav: { backgroundColor: "{colors.canvas}", textColor: "{colors.ink-muted}", height: 42px }
+  check-row: { mark: "9px square in the status color (hollow when idle)", columns: "mark, name, state, time", time: "tabular figures, right" }
   live-bar: { backgroundColor: "{colors.surface}", textColor: "{colors.ink}", typography: "{typography.dense}" }
   card: { backgroundColor: "{colors.surface}", border: "1px solid {colors.hairline}", rounded: "{rounded.lg}", padding: "20px 24px" }
-  button-primary: { backgroundColor: "{colors.primary}", textColor: "{colors.on-primary}", rounded: "{rounded.pill}", padding: "7px 20px" }
+  button-primary: { backgroundColor: "{colors.primary}", textColor: "{colors.on-primary}", rounded: "{rounded.sm}", padding: "7px 14px" }
   button-utility: { backgroundColor: "{colors.surface}", textColor: "{colors.ink}", border: "1px solid {colors.hairline}", rounded: "{rounded.sm}", padding: "7px 14px" }
   button-danger: { backgroundColor: "{colors.surface}", textColor: "{colors.bad}", border: "1px solid {colors.hairline}", rounded: "{rounded.sm}" }
-  tab: { backgroundColor: "{colors.surface}", border: "1px solid {colors.hairline}", rounded: "{rounded.pill}", padding: "6px 16px" }
-  tab-active: { backgroundColor: "{colors.ink}", textColor: "{colors.canvas}", rounded: "{rounded.pill}" }
+  tab: { textColor: "{colors.ink-muted}", padding: "8px 0", border-bottom: "1px solid {colors.hairline}" }
+  tab-active: { textColor: "{colors.ink}", underline: "2px {colors.primary}" }
   badge: { border: "1px solid currentColor", rounded: "{rounded.pill}", typography: "{typography.caption}" }
   input: { backgroundColor: "{colors.surface}", border: "1px solid {colors.hairline}", rounded: "{rounded.sm}", padding: "8px 10px" }
   meter: { track: "{colors.hairline}", fill: "{colors.ok} / {colors.warn} at 70% / {colors.bad} at 90%", height: 8px, rounded: "{rounded.pill}" }
@@ -78,15 +80,16 @@ agentCowork is an operations console: a person opens it to learn **what needs th
 ### Key characteristics
 
 - Content first: state, counts and the work waiting for a person carry the page; chrome recedes.
-- One accent. `{colors.primary}` (Action Blue) marks every interactive element — links, primary buttons, focus. Nothing decorative uses it.
+- One accent. `{colors.primary}` (Blue) marks every interactive element — links, primary buttons, focus. Nothing decorative uses it.
 - Status colors are semantic only: `{colors.ok}`, `{colors.warn}`, `{colors.bad}` say how something *is*, never what to click.
-- Parchment canvas, white cards with a hairline border, near-black ink. Depth comes from surface change, not shadows.
-- Two button grammars: a pill for the one primary action of an area, compact 8px rectangles for utility actions.
-- Tight, slightly negative tracking on titles; body at 15px because the console is mostly tables and forms.
+- The signature is the **check row**, borrowed from a CI checks list: a status mark, the subject, what it is doing or why not, and a time in tabular figures. Agents, setup steps and audit verdicts use it; nothing else competes with it.
+- Neutral canvas, white cards with a hairline border, near-black ink. Depth comes from surface change, not shadows. A card is a real object; a single line is never a card.
+- One button shape: 6px rectangles, the primary one filled in blue. Pills are only for status (badges, counts, meters).
+- Body at 15px without tracking, page titles at 26px: this is a console of tables and forms, not a showcase.
 
 ## Information architecture
 
-Screens are grouped by intent in a thin black **global nav**; the pages of the current group sit in a frosted **sub-nav** below it.
+Screens are grouped by intent in a solid **global nav**; the pages of the current group sit in a **sub-nav** row below it. The current group and page are underlined in blue.
 
 | Group | Pages | Question it answers |
 | --- | --- | --- |
@@ -107,17 +110,17 @@ Rules that hold on every page:
 
 ### Accent
 
-- **Action Blue** (`{colors.primary}` #0066cc): links, primary buttons, the active sub-nav item, checkboxes. The only interactive color.
+- **Blue** (`{colors.primary}` #0066cc): links, primary buttons, the active sub-nav item, checkboxes. The only interactive color.
 - **Focus Blue** (`{colors.primary-focus}` #0071e3): the 2px keyboard focus ring.
-- **Sky Blue** (`{colors.primary-on-dark}` #2997ff): Action Blue's dark-theme counterpart, used wherever the dark theme puts an accent.
+- **Sky Blue** (`{colors.primary-on-dark}` #2997ff): Blue's dark-theme counterpart, used wherever the dark theme puts an accent.
 
 ### Surfaces and text
 
-- **Parchment** (`{colors.canvas}` #f5f5f7): the page canvas.
+- **Canvas** (`{colors.canvas}` #f5f5f7): the page canvas and the sub-nav.
 - **White** (`{colors.surface}`): cards, inputs, tabs.
 - **Hairline** (`{colors.hairline}` #e0e0e0): card and input borders, table rules.
-- **Ink** (`{colors.ink}` #1d1d1f): all text; **Ink Muted** (`{colors.ink-muted}` #6e6e73) for secondary text, chosen for 4.5:1 contrast on parchment.
-- **Black** (`{colors.nav}`): the global nav only.
+- **Ink** (`{colors.ink}` #1d1d1f): all text; **Ink Muted** (`{colors.ink-muted}` #6e6e73) for secondary text, chosen for 4.5:1 contrast on the canvas.
+- **Nav** (`{colors.nav}`, `{colors.dark-nav}` in dark): the global nav, a solid surface with a hairline; inactive groups in `{colors.nav-muted}`.
 
 ### Status
 
@@ -125,7 +128,7 @@ Rules that hold on every page:
 
 ### Dark theme
 
-Follows the operating system. Canvas `{colors.dark-canvas}`, cards `{colors.dark-surface}`, hairlines `{colors.dark-hairline}`, ink `{colors.dark-ink}`, muted `{colors.dark-ink-muted}`, accent `{colors.primary-on-dark}`. The global nav gains a hairline so it separates from the black canvas.
+Follows the operating system. Canvas `{colors.dark-canvas}`, cards `{colors.dark-surface}`, hairlines `{colors.dark-hairline}`, ink `{colors.dark-ink}`, muted `{colors.dark-ink-muted}`, accent `{colors.primary-on-dark}`. The global nav is #161618 with a hairline, so it separates from the black canvas.
 
 **No gradients, anywhere.**
 
@@ -135,8 +138,7 @@ One system stack (`{typography.family}`): the platform UI font, with Inter as th
 
 | Token | Size | Weight | Use |
 | --- | --- | --- | --- |
-| `display` | 40px | 600 | Home and agent page heroes |
-| `page-title` | 34px (28px on phones) | 600 | Page titles; Home's "waiting for you" count |
+| `page-title` | 26px | 600 | Page titles; Home's "waiting for you" count |
 | `section-title` | 24px | 600 | Sections inside a page (e.g. Accounts → Agent runtimes) |
 | `sub-nav-title` | 21px | 600 | The group name in the sub-nav |
 | `lead` | 17px | 400 | The paragraph under a page title |
@@ -146,14 +148,14 @@ One system stack (`{typography.family}`): the platform UI font, with Inter as th
 | `nav-link` | 13px | 400 | Global and sub-nav links |
 | `caption` | 12px | 400 | Hints, table headers, timestamps |
 
-Principles: weights are 400 and 600 only; titles carry slight negative tracking; body line height stays at 1.47; numbers in tables are tabular and right-aligned.
+Principles: weights are 400 and 600 only; no tracking on body text; body line height stays at 1.47; numbers in tables are tabular and right-aligned.
 
 ## Layout
 
 - **Base unit 8px**; structural spacing snaps to 8/12/16/24/32.
 - **Content width** 1200px, centered, 24px side padding (16px on phones). Global nav, sub-nav, live bar and content share it.
 - **Page rhythm:** title → lead → cards stacked with 20px gaps. Cards hold 20×24px padding (16px on phones).
-- **Grids:** agent cards fill columns of at least 205px (five across on desktop); limits and tiles at least 200–240px.
+- **Grids:** agent cards fill columns of at least 280px (three across on desktop); on Home the agents are check rows, not cards; limits and tiles at least 200–240px.
 
 ## Elevation
 
@@ -161,7 +163,6 @@ Principles: weights are 400 and 600 only; titles carry slight negative tracking;
 | --- | --- | --- |
 | Flat | No border | Canvas, page titles |
 | Hairline | 1px `{colors.hairline}` | Cards, inputs, tabs, tables |
-| Frosted | Canvas at 80% + `saturate(180%) blur(20px)` | Sub-nav, which stays pinned under the global nav |
 
 No drop shadows on any UI element.
 
@@ -171,21 +172,22 @@ No drop shadows on any UI element.
 | --- | --- | --- |
 | `sm` | 8px | Utility buttons, inputs, code blocks |
 | `md` | 12px | Sub-cards inside a card |
-| `lg` | 18px | Cards |
-| `pill` | 9999px | Primary buttons, tabs, badges, meters, the active global-nav group |
+| `lg` | 10px | Cards |
+| `pill` | 9999px | Status only: badges, counts, meters |
 
-Don't mix grammars: a control is either a pill or an 8px rectangle.
+A control is a 6px rectangle; a pill always means status.
 
 ## Components
 
-- **Global nav** — black, 44px, sticky. Brand and instance name, the five groups (the active one on a translucent white pill; Work carries the inbox count), log out on the right.
-- **Sub-nav** — frosted, 52px, sticky under the global nav. Group name on the left at `sub-nav-title`, the group's pages on the right; the current one in Action Blue. Hidden on Home.
+- **Global nav** — solid surface, 44px, sticky. Brand and instance name, the four groups (the active one underlined in blue; Work carries the inbox count, Team an orange count of agents that are on but not working), log out on the right.
+- **Sub-nav** — canvas, 42px, sticky under the global nav. Group name, then the group's pages; the current one underlined in blue. Hidden on Home.
 - **Live bar** — a white strip under the navigation listing live agents with a `warn` badge. Absent while every agent is in dry run.
-- **Card** — white, hairline, 18px radius. Optional header with a `card-title` and actions on the right.
+- **Card** — white, hairline, 10px radius. Optional header with a `card-title` and actions on the right.
 - **Agent card** — a card that links to the agent: name, on/off and live/dry-run badges, a one-line summary, the reason it is off in `warn`, last poll in `caption`.
-- **Primary button** — Action Blue pill. At most one per area (Open the inbox, Run now, Save).
-- **Utility button** — white 8px rectangle with a hairline; hover outlines it in Action Blue. **Danger** variant uses `bad` text.
-- **Tabs** — pills; the active one inverts to ink on canvas.
+- **Primary button** — filled blue 6px rectangle. At most one per area (Open the inbox, Run now, Save).
+- **Utility button** — white 6px rectangle with a hairline; hover outlines it in Blue. **Danger** variant uses `bad` text.
+- **Tabs** — text on a hairline; the active one in ink, underlined in blue.
+- **Check row** — the signature: status mark, name, state in words, time on the right in tabular figures; rows separated by hairlines inside one card. On phones the state wraps under the name.
 - **Badge** — outlined pill in the status color: on, off, live, dry run, Available, Paused.
 - **Meter** — 8px pill track; fill turns `warn` at 70% and `bad` at 90%. Exposed as a progressbar with a label.
 - **Inputs** — white, hairline, 8px radius; focus replaces the border with a 2px Focus Blue outline. Checkboxes use the accent color.
@@ -198,9 +200,9 @@ Press feedback on every button: `transform: scale(0.97)`, disabled under `prefer
 
 ### Do
 
-- Use Action Blue for everything clickable and for nothing else.
+- Use Blue for everything clickable and for nothing else.
 - Give every off, failed or blocked state a reason and a way to fix it.
-- Keep one primary (pill) action per area; everything else is a utility button.
+- Keep one primary action per area; everything else is a utility button.
 - Use tokens (`var(--accent)`, `var(--line)`…) — never inline hex in components.
 - Check each screen in light, dark and at phone width.
 
@@ -218,4 +220,4 @@ Press feedback on every button: `transform: scale(0.97)`, disabled under `prefer
 | > 833px | Full layout |
 | ≤ 833px | 16px side padding; global nav and sub-nav scroll horizontally (scrollbar hidden); the instance name hides; page titles drop to 28px; fields take the full width; the instructions viewer stacks |
 
-Touch targets stay at least 34px high; the primary pill is the largest target in its area.
+Touch targets stay at least 34px high; the primary button is the largest target in its area.

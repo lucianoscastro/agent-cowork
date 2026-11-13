@@ -497,17 +497,12 @@ export function AgentPage({ id, tab }: { id: AgentId; tab: string }) {
   const { data: overview, error: overviewError, reload: reloadOverview } = useFetch<Overview>('/overview', 5000);
   const { data: settings, error: settingsError, reload } = useFetch<SettingsResponse>('/settings');
   if (!overview || !settings) return <Loading error={overviewError ?? settingsError} retry={() => void Promise.all([reloadOverview(), reload()])} />;
-  const a = overview.agents.find((x) => x.id === id)!;
   return (
     <>
       <header className="hero">
         <div>
           <h1>{AGENT_NAMES[id]}</h1>
         </div>
-        <span className="row tight">
-          <StateBadge a={a} />
-          {overview.live.includes(id) ? <Badge tone="warn">live</Badge> : <Badge tone="muted">dry run</Badge>}
-        </span>
       </header>
       <p className="lead">{t(AGENT_SUMMARY[id])}</p>
       <details className="fold">

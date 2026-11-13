@@ -76,6 +76,14 @@ export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   return <span className={`badge ${tone}`}>{tr(t, children)}</span>;
 }
 
+/**
+ * The status mark, as on a CI checks list: a small shape in a status color. Next to words it is decoration
+ * (hidden from screen readers); alone, `label` names it.
+ */
+export function Mark({ tone, label }: { tone: Tone | 'idle'; label?: string }) {
+  return label ? <span className={`mark ${tone}`} role="img" aria-label={label} title={label} /> : <span className={`mark ${tone}`} aria-hidden="true" />;
+}
+
 export function RunStatus({ status }: { status: Run['status'] }) {
   // The status words are translated by Badge.
   const tone: Record<Run['status'], Tone> = { running: 'info', done: 'ok', failed: 'bad', killed: 'bad', parked: 'warn', waiting: 'warn' };

@@ -210,7 +210,7 @@ export function RunDetailPage({ id }: { id: number }) {
             <Time iso={data.started_at} /> · {duration(data.started_at, data.ended_at)}
           </dd>
           <dt>{t('Usage')}</dt>
-          <dd>{t('{tokens} tokens · {cost} estimated', { tokens: formatTokens(data.tokens), cost: formatCost(data.cost) })}</dd>
+          <dd>{t('{tokens} tokens, {cost} estimated', { tokens: formatTokens(data.tokens), cost: formatCost(data.cost) })}</dd>
           {data.summary && data.summary !== data.error && (
             <>
               <dt>{t('Result')}</dt>
