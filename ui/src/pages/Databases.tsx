@@ -133,7 +133,7 @@ export function ProjectDatabases(props: {
               <Field label="Engine">
                 <Select value={db.engine} onChange={(engine) => set(k, { ...db, engine, srv: engine === 'mongodb' ? db.srv : undefined })} options={ENGINES} />
               </Field>
-              <Field label="Host" hint={db.engine === 'mongodb' ? 'One host, or several as host1:27017,host2:27017.' : undefined}>
+              <Field label="Host" hint={db.engine === 'mongodb' ? 'One host, or several as host1:27017,host2:27017.' : 'Server name or IP address.'}>
                 <Text value={db.host} onChange={(host) => set(k, { ...db, host: host.trim() })} placeholder="db.example.com" />
               </Field>
               {!(db.engine === 'mongodb' && db.srv) && (
