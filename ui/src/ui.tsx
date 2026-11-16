@@ -189,9 +189,9 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
   );
 }
 
-export function Text({ value, onChange, placeholder, type = 'text' }: { value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
+export function Text({ value, onChange, placeholder, type = 'text', disabled }: { value: string; onChange: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean }) {
   const t = useT();
-  return <input type={type} value={value} placeholder={placeholder && t(placeholder)} onChange={(e) => onChange(e.target.value)} />;
+  return <input type={type} value={value} placeholder={placeholder && t(placeholder)} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
 }
 
 export const Num = ({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min?: number; max?: number }) => (

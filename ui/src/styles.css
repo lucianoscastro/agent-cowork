@@ -133,6 +133,7 @@ time, td.num, .num, .check-time, .tile-value { font-variant-numeric: tabular-num
 .hint { font-size: 12px; color: var(--muted); }
 input, select, textarea { font: inherit; font-size: 14px; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; width: 100%; }
 textarea { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; resize: vertical; }
+input:not([type='checkbox']):disabled { opacity: 0.5; cursor: not-allowed; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: -1px; border-color: transparent; }
 input[type='checkbox'] { width: auto; }
 .toggle { display: inline-flex; gap: 8px; align-items: center; margin: 6px 24px 6px 0; cursor: pointer; }

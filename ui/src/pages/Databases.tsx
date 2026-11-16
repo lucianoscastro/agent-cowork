@@ -136,11 +136,15 @@ export function ProjectDatabases(props: {
               <Field label="Host" hint={db.engine === 'mongodb' ? 'One host, or several as host1:27017,host2:27017.' : 'Server name or IP address.'}>
                 <Text value={db.host} onChange={(host) => set(k, { ...db, host: host.trim() })} placeholder="db.example.com" />
               </Field>
-              {!(db.engine === 'mongodb' && db.srv) && (
-                <Field label="Port">
-                  <Text value={db.port ? String(db.port) : ''} onChange={(v) => /^\d{0,5}$/.test(v.trim()) && set(k, { ...db, port: v.trim() ? Number(v) : undefined })} placeholder={PORTS[db.engine]} />
-                </Field>
-              )}
+              {/* Disabled rather than hidden with mongodb+srv, so the row keeps its layout. */}
+              <Field label="Port">
+                <Text
+                  value={db.port ? String(db.port) : ''}
+                  onChange={(v) => /^\d{0,5}$/.test(v.trim()) && set(k, { ...db, port: v.trim() ? Number(v) : undefined })}
+                  placeholder={db.srv ? 'Set by DNS' : PORTS[db.engine]}
+                  disabled={db.srv}
+                />
+              </Field>
             </div>
             <div className="row fields">
               <Field label="Database">
