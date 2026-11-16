@@ -52,12 +52,27 @@ export const hostOf = (url: string) => {
   }
 };
 
+export const DB_ENGINE_IDS = ['sqlserver', 'postgres', 'mongodb'] as const;
+export type DbEngine = (typeof DB_ENGINE_IDS)[number];
+
 /**
- * A database the agents may use through the platform's tools (databases.ts). Its connection URL is a secret
- * under `db.<project>.<name>` that no model ever sees. `write` lets the steps that change code validate
- * scripts against it, always rolled back.
+ * A database the agents may use through the platform's tools (databases.ts), described field by field as in a
+ * JDBC URL. Only the password is a secret, under `db.<project>.<name>`, and no model ever sees it or the URL the
+ * platform builds. `write` lets the steps that change code validate scripts against it, always rolled back.
+ * `options` are query parameters (`encrypt=true&trustServerCertificate=true`); `srv` is MongoDB's `mongodb+srv`.
  */
-export type ProjectDatabase = { name: string; access: 'read' | 'write'; description: string };
+export type ProjectDatabase = {
+  name: string;
+  access: 'read' | 'write';
+  description: string;
+  engine: DbEngine;
+  host: string;
+  port?: number;
+  database: string;
+  user: string;
+  options?: string;
+  srv?: boolean;
+};
 
 export type Project = {
   name: string;
@@ -367,7 +382,25 @@ function validateDatabases(v: unknown, where: string): ProjectDatabase[] {
     if (!DB_NAME.test(name)) throw new Error(`${w}.name: lowercase letters, digits, - and _, starting with a letter`);
     if (names.has(name)) throw new Error(`${where}: two databases are named "${name}"`);
     names.add(name);
-    return { name, access: oneOf(o, 'access', w, ['read', 'write'] as const), description: str(o, 'description', w, { max: 500 }) };
+    const engine = oneOf(o, 'engine', w, DB_ENGINE_IDS);
+    // Plain names only: the URL is built from these, so none may carry its own credentials, path or query.
+    const host = str(o, 'host', w, { required: true, max: 300 });
+    if (!/^[\w.\-:,[\]]+$/.test(host)) throw new Error(`${w}.host: a host name or address, with an optional :port (several, comma-separated, for MongoDB)`);
+    const options = str(o, 'options', w, { max: 500 });
+    if (options && !/^[\w.-]+=[^&;\s]*([&;][\w.-]+=[^&;\s]*)*$/.test(options)) throw new Error(`${w}.options: key=value pairs joined by & or ;`);
+    const db: ProjectDatabase = {
+      name,
+      access: oneOf(o, 'access', w, ['read', 'write'] as const),
+      description: str(o, 'description', w, { max: 500 }),
+      engine,
+      host,
+      database: str(o, 'database', w, { required: true, max: 128 }),
+      user: str(o, 'user', w, { max: 128 }),
+    };
+    if (o.port !== undefined && o.port !== null) db.port = int(o, 'port', w, 1, 65535);
+    if (options) db.options = options;
+    if (engine === 'mongodb' && o.srv === true) db.srv = true;
+    return db;
   });
 }
 

@@ -10,7 +10,7 @@ import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
 import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, validateProjects, verifyCommands, write } from '../src/config.ts';
-import { databasesPrompt, dbEngine, dbTarget, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
+import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { getSecret, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
 import { adfToText, hasAnswer, toAdf } from '../src/integrations/jira.ts';
@@ -878,22 +878,22 @@ test('validPromotion: only two different branch names of a repository of the pro
   assert.equal(validPromotion(project, { repo: 'acme/shop-api', from: 'develop', to: 'qa..main' }), false);
 });
 
-test('databases: the engine and target of a connection, never its credentials', () => {
-  assert.equal(dbEngine('postgresql://u:p@h/db'), 'postgres');
-  assert.equal(dbEngine('mongodb+srv://u:p@cluster.acme.test/shop'), 'mongodb');
-  assert.equal(dbEngine('Server=tcp:h,1433;Database=shop;User Id=u;Password=p;'), 'sqlserver');
-  assert.equal(dbEngine('mysql://h/db'), undefined);
-  assert.deepEqual(dbTarget('sqlserver://u:p@db.acme.test:1433/shop?encrypt=true'), { engine: 'sqlserver', host: 'db.acme.test:1433', database: 'shop' });
-  assert.deepEqual(dbTarget('Data Source=db.acme.test;Initial Catalog=shop;User ID=app;Password=S3cret;'), { engine: 'sqlserver', host: 'db.acme.test', database: 'shop' });
-  assert.deepEqual(dbTarget('mongodb://h1:27017,h2:27017/shop?replicaSet=rs0'), { engine: 'mongodb', host: 'h1:27017,h2:27017', database: 'shop' });
+test('databases: the connection URL is built from the fields, with the user and password encoded', () => {
+  const base = { name: 'dev', access: 'read' as const, description: '' };
+  assert.equal(
+    connectionUrl({ ...base, engine: 'sqlserver', host: 'db.acme.test', database: 'shop', user: 'app', options: 'encrypt=true;trustServerCertificate=true' }, 'p@ss/w:rd'),
+    'sqlserver://app:p%40ss%2Fw%3Ard@db.acme.test:1433/shop?encrypt=true&trustServerCertificate=true',
+  );
+  assert.equal(connectionUrl({ ...base, engine: 'postgres', host: '10.0.0.5', port: 6432, database: 'shop', user: 'reader' }, 'x'), 'postgresql://reader:x@10.0.0.5:6432/shop');
+  assert.equal(connectionUrl({ ...base, engine: 'mongodb', host: 'h1:27017,h2:27017', database: 'shop', user: '', options: 'replicaSet=rs0' }, ''), 'mongodb://h1:27017,h2:27017/shop?replicaSet=rs0');
+  assert.equal(connectionUrl({ ...base, engine: 'mongodb', host: 'cluster0.acme.test', srv: true, database: 'shop', user: 'app' }, 'pw'), 'mongodb+srv://app:pw@cluster0.acme.test/shop');
 });
 
 test('databases: errors and results never carry the credentials', () => {
   const url = 'postgresql://app_user:p%40ss-W0rd@db.acme.test/shop';
   const text = redact(`password authentication failed for user "app_user" (p@ss-W0rd) at ${url}`, url);
   assert.ok(!text.includes('ss-W0rd') && !text.includes('app_user'), text);
-  const ado = 'Server=h;Database=d;User Id=svc_reader;Password=Tr1cky-pw;';
-  assert.ok(!redact('login failed for svc_reader; Password=Tr1cky-pw', ado).includes('Tr1cky'));
+  assert.ok(!redact('login failed; Password=Tr1cky-pw', url).includes('Tr1cky'));
   assert.equal(redact('see postgres://someone:other@host/db', url), 'see postgres://[REDACTED]@host/db');
   // Escaped in JSON, and short: still masked.
   const quoted = 'postgresql://app:pa%22s%5Cs@h/db';
@@ -942,21 +942,31 @@ test('databases: MongoDB commands come from an allow-list', () => {
   assert.ok(mongoRefusal({ find: 'users', $db: 'admin' }, false));
 });
 
-test('databases: a project names each database once, with its access', () => {
+test('databases: a project names each database once, field by field', () => {
   const base = { name: 'Shop', repos: { web: { repo: 'acme/web', stack: 'react' } } };
-  const [p] = validateProjects([{ ...base, databases: [{ name: 'dev-api', access: 'write', description: 'dev' }] }]);
-  assert.deepEqual(p.databases, [{ name: 'dev-api', access: 'write', description: 'dev' }]);
+  const db = { name: 'dev-api', access: 'write', description: 'dev', engine: 'sqlserver', host: 'db.acme.test', database: 'shop', user: 'app' };
+  const [p] = validateProjects([{ ...base, databases: [{ ...db, port: 1433, options: 'encrypt=true', srv: true }] }]);
+  assert.deepEqual(p.databases, [{ ...db, port: 1433, options: 'encrypt=true' }]);
   assert.equal(validateProjects([base])[0].databases, undefined);
-  assert.throws(() => validateProjects([{ ...base, databases: [{ name: 'Dev API', access: 'read' }] }]), /lowercase/);
-  assert.throws(() => validateProjects([{ ...base, databases: [{ name: 'a', access: 'admin' }] }]), /access/);
-  assert.throws(() => validateProjects([{ ...base, databases: [{ name: 'a', access: 'read' }, { name: 'a', access: 'read' }] }]), /two databases/);
+  const bad = (patch: object, error: RegExp) => assert.throws(() => validateProjects([{ ...base, databases: [{ ...db, ...patch }] }]), error);
+  bad({ name: 'Dev API' }, /lowercase/);
+  bad({ access: 'admin' }, /access/);
+  bad({ engine: 'mysql' }, /engine/);
+  // No field can smuggle credentials, a path or a query into the URL.
+  bad({ host: 'evil@db.acme.test' }, /host/);
+  bad({ host: 'db.acme.test/other' }, /host/);
+  bad({ options: 'a=1 b=2' }, /options/);
+  bad({ port: 70000 }, /port/);
+  bad({ database: '' }, /database/);
+  assert.throws(() => validateProjects([{ ...base, databases: [db, db] }]), /two databases/);
 });
 
 test('databases: a run gets read tools, validation only with write, and nothing after revoke', async () => {
-  const project = { name: 'DbShop', repos: {}, databases: [{ name: 'dev', access: 'write' as const, description: 'Dev data' }, { name: 'none', access: 'read' as const, description: '' }] };
+  const fields = { engine: 'postgres' as const, host: '127.0.0.1', port: 1, database: 'shop', user: 'app' };
+  const project = { name: 'DbShop', repos: {}, databases: [{ name: 'dev', access: 'write' as const, description: 'Dev data', ...fields }, { name: 'none', access: 'read' as const, description: '', ...fields }] };
   assert.equal(await grantDatabases({} as Run, 'developer', project), undefined);
   assert.equal(databasesPrompt(project), '');
-  setSecret(dbSecretName('DbShop', 'dev'), 'postgresql://app:Pw-for-test@127.0.0.1:1/shop');
+  setSecret(dbSecretName('DbShop', 'dev'), 'Pw-for-test');
   assert.match(databasesPrompt(project), /`dev` \(PostgreSQL, write\): Dev data/);
   assert.doesNotMatch(databasesPrompt(project), /`none`|Pw-for-test/);
   const events: unknown[] = [];

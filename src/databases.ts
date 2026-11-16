@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { QueryArrayConfig } from 'pg';
-import { dbSecretName, type Project, type ProjectDatabase } from './config.ts';
+import { dbSecretName, type DbEngine, type Project, type ProjectDatabase } from './config.ts';
 import { audit, getSecret } from './db.ts';
 import type { Run } from './runs.ts';
 import { log, maskSecrets, REDACTED } from './sh.ts';
@@ -15,8 +15,8 @@ import { log, maskSecrets, REDACTED } from './sh.ts';
  * is always rolled back too. The real barrier is the database login: a read connection should use a read-only one.
  */
 
-export const DB_ENGINES = { sqlserver: 'SQL Server', postgres: 'PostgreSQL', mongodb: 'MongoDB' } as const;
-export type DbEngine = keyof typeof DB_ENGINES;
+export const DB_ENGINES: Record<DbEngine, string> = { sqlserver: 'SQL Server', postgres: 'PostgreSQL', mongodb: 'MongoDB' };
+const DEFAULT_PORTS: Record<DbEngine, number> = { sqlserver: 1433, postgres: 5432, mongodb: 27017 };
 
 const CONNECT_MS = 15_000;
 const QUERY_MS = 30_000;
@@ -24,19 +24,28 @@ const MAX_ROWS = 200;
 const MAX_CELL = 2_000;
 const MAX_TEXT = 60_000;
 
-// --- connection URLs (never shown: only the engine, host and database) ---
+// --- connections: built from the project's fields and the stored password, never shown ---
 
-/** The engine of a connection: from the URL scheme, or SQL Server for an ADO.NET connection string. */
-export function dbEngine(url: string): DbEngine | undefined {
-  const u = url.trim();
-  if (/^postgres(ql)?:\/\//i.test(u)) return 'postgres';
-  if (/^mongodb(\+srv)?:\/\//i.test(u)) return 'mongodb';
-  if (/^(sqlserver|mssql):\/\//i.test(u) || /(^|;)\s*(server|data source)\s*=/i.test(u)) return 'sqlserver';
-  return undefined;
+/**
+ * The connection URL of a database, from its fields (validated in config.ts: no host can carry a path, a query
+ * or credentials) and its password. Exported for tests.
+ */
+export function connectionUrl(d: ProjectDatabase, password: string): string {
+  const enc = encodeURIComponent;
+  const auth = d.user ? `${enc(d.user)}:${enc(password)}@` : '';
+  const options = (d.options ?? '').split(/[&;]/).filter(Boolean).join('&');
+  const query = options ? `?${options}` : '';
+  // A MongoDB seed list (h1:27017,h2:27017) or SRV name already says where to connect.
+  const host = (d.engine === 'mongodb' && (d.srv || /[,:]/.test(d.host))) ? d.host : `${d.host}:${d.port ?? DEFAULT_PORTS[d.engine]}`;
+  const scheme = d.engine === 'postgres' ? 'postgresql' : d.engine === 'sqlserver' ? 'sqlserver' : d.srv ? 'mongodb+srv' : 'mongodb';
+  return `${scheme}://${auth}${host}/${enc(d.database)}${query}`;
 }
 
-const URL_PARTS = /^[a-z+]+:\/\/(?:([^@/]*)@)?([^/?#]*)(?:\/([^?#]*))?(?:\?([^#]*))?/i;
-const adoValue = (url: string, keys: string) => new RegExp(`(?:^|;)\\s*(?:${keys})\\s*=\\s*("[^"]*"|'[^']*'|[^;]*)`, 'i').exec(url)?.[1].replace(/^["']|["']$/g, '').trim() ?? '';
+/** The engine of a connection URL, from its scheme. */
+const dbEngine = (url: string): DbEngine | undefined =>
+  /^postgresql:\/\//.test(url) ? 'postgres' : /^mongodb(\+srv)?:\/\//.test(url) ? 'mongodb' : /^sqlserver:\/\//.test(url) ? 'sqlserver' : undefined;
+
+const URL_PARTS = /^[a-z+]+:\/\/(?:([^@/]*)@)?/i;
 const decode = (s: string) => {
   try {
     return decodeURIComponent(s);
@@ -45,23 +54,13 @@ const decode = (s: string) => {
   }
 };
 
-/** Where a connection points, safe to show. Exported for tests. */
-export function dbTarget(url: string): { engine: DbEngine; host: string; database: string } | undefined {
-  const engine = dbEngine(url);
-  if (!engine) return undefined;
-  const m = URL_PARTS.exec(url.trim());
-  if (m) return { engine, host: m[2], database: decode(m[3] ?? '') || new URLSearchParams(m[4] ?? '').get('database') || '' };
-  return { engine, host: adoValue(url, 'server|data source|address|addr'), database: adoValue(url, 'database|initial catalog') };
-}
-
-/** The parts of a connection that must never reach a log or a model: passwords, then user names. Exported for tests. */
-export function urlSecrets(url: string): { passwords: string[]; users: string[] } {
-  const m = URL_PARTS.exec(url.trim());
-  const userinfo = m?.[1] ?? '';
+/** The parts of a connection that must never reach a log or a model: passwords, then user names. */
+function urlSecrets(url: string): { passwords: string[]; users: string[] } {
+  const userinfo = URL_PARTS.exec(url.trim())?.[1] ?? '';
   const colon = userinfo.indexOf(':');
   const [user, password] = colon < 0 ? [userinfo, ''] : [userinfo.slice(0, colon), userinfo.slice(colon + 1)];
-  const passwords = m ? [password, decode(password)] : [adoValue(url, 'password|pwd')];
-  const users = m ? [user, decode(user)] : [adoValue(url, 'user id|uid|user')];
+  const passwords = [password, decode(password)];
+  const users = [user, decode(user)];
   // As written in JSON too: a password with a quote or a backslash is escaped there.
   const forms = (list: string[]) => [...new Set(list.filter(Boolean).flatMap((v) => [v, JSON.stringify(v).slice(1, -1)]))];
   return { passwords: forms([url.trim(), ...passwords]), users: forms(users) };
@@ -301,20 +300,19 @@ async function postgres(url: string): Promise<Connection> {
 
 async function sqlserver(url: string): Promise<Connection> {
   const mssql = (await import('mssql')).default;
-  let config: Record<string, unknown>;
-  if (/^(sqlserver|mssql):\/\//i.test(url.trim())) {
-    const u = new URL(url.trim().replace(/^(sqlserver|mssql):/i, 'http:'));
-    const q = u.searchParams;
-    config = {
-      server: u.hostname,
-      port: Number(u.port) || 1433,
-      database: decode(u.pathname.slice(1)) || q.get('database') || undefined,
-      user: decode(u.username),
-      password: decode(u.password),
-      options: { encrypt: q.get('encrypt') !== 'false', trustServerCertificate: q.get('trustServerCertificate') === 'true', instanceName: q.get('instanceName') ?? undefined },
-    };
-  } else config = mssql.ConnectionPool.parseConnectionString(url) as unknown as Record<string, unknown>;
-  const pool = new mssql.ConnectionPool({ ...config, connectionTimeout: CONNECT_MS, requestTimeout: QUERY_MS, pool: { max: 1, min: 0 } } as never);
+  const u = new URL(url.replace(/^sqlserver:/, 'http:'));
+  const q = u.searchParams;
+  const pool = new mssql.ConnectionPool({
+    server: u.hostname,
+    port: Number(u.port) || 1433,
+    database: decode(u.pathname.slice(1)),
+    user: decode(u.username),
+    password: decode(u.password),
+    options: { encrypt: q.get('encrypt') !== 'false', trustServerCertificate: q.get('trustServerCertificate') === 'true', instanceName: q.get('instanceName') ?? undefined },
+    connectionTimeout: CONNECT_MS,
+    requestTimeout: QUERY_MS,
+    pool: { max: 1, min: 0 },
+  });
   await pool.connect();
   // Error 266: a COMMIT or ROLLBACK inside a procedure changed the transaction count; 3609: a trigger ended the transaction.
   const endedBy = (err: unknown) => [266, 3609].includes((err as { number?: number }).number ?? 0);
@@ -511,7 +509,7 @@ async function mongodb(url: string): Promise<Connection> {
 
 async function withConnection<T>(url: string, fn: (c: Connection) => Promise<T>): Promise<T> {
   const engine = dbEngine(url);
-  if (!engine) throw new Error('Unknown database engine: the URL must start with sqlserver://, postgresql:// or mongodb://, or be a SQL Server connection string');
+  if (!engine) throw new Error('Unknown database engine');
   // ponytail: one connection per call, no pool; a run makes a handful of calls.
   const connection = await (engine === 'postgres' ? postgres(url) : engine === 'sqlserver' ? sqlserver(url) : mongodb(url));
   try {
@@ -540,10 +538,10 @@ export const TOOLS_TOKEN_ENV = 'AGENTCOWORK_TOOLS_TOKEN';
 type Grant = { run: Run; agent: string; project: Project; write: boolean };
 const grants = new Map<string, Grant>();
 
-/** The project's databases that have a stored connection. */
-const available = (project: Project) => (project.databases ?? []).filter((d) => getSecret(dbSecretName(project.name, d.name)));
-/** A stored connection's engine, by name (the URL was checked when it was stored). */
-const engineName = (project: Project, d: ProjectDatabase) => DB_ENGINES[dbEngine(getSecret(dbSecretName(project.name, d.name)) ?? '') ?? 'postgres'];
+/** The project's databases ready to connect: with a stored password, or no login at all. */
+const available = (project: Project) => (project.databases ?? []).filter((d) => !d.user || getSecret(dbSecretName(project.name, d.name)) !== undefined);
+/** A database's connection URL, with its stored password. */
+export const databaseUrl = (project: Project, d: ProjectDatabase) => connectionUrl(d, getSecret(dbSecretName(project.name, d.name)) ?? '');
 const canValidate = (g: Grant) => g.write && available(g.project).some((d) => d.access === 'write');
 
 const TOOLS = {
@@ -574,12 +572,12 @@ async function callTool(g: Grant, name: unknown, args: Record<string, unknown>):
   const reply = (text: string, isError = false) => ({ content: [{ type: 'text' as const, text }], ...(isError ? { isError } : {}) });
   if (!toolsFor(g).some((t) => t.name === name)) return reply(`Unknown tool ${String(name)}`, true);
   if (name === 'db_list') {
-    return reply(JSON.stringify(available(g.project).map((d) => ({ database: d.name, engine: engineName(g.project, d), access: g.write ? d.access : 'read', description: d.description }))));
+    return reply(JSON.stringify(available(g.project).map((d) => ({ database: d.name, engine: DB_ENGINES[d.engine], access: g.write ? d.access : 'read', description: d.description }))));
   }
   const db: ProjectDatabase | undefined = available(g.project).find((d) => d.name === args.database);
   if (!db) return reply(`No database "${String(args.database)}" in this project. Call db_list.`, true);
   if (name === 'db_validate' && db.access !== 'write') return reply(`${db.name} is read-only: scripts cannot be validated against it.`, true);
-  const url = getSecret(dbSecretName(g.project.name, db.name)) ?? '';
+  const url = databaseUrl(g.project, db);
   const input = String(args.query ?? args.script ?? args.object ?? '');
   if (input.length > 200_000) return reply('The text is too long (200,000 characters at most).', true);
   g.run.event('info', `${String(name)} on ${db.name}`, { [name === 'db_validate' ? 'script' : 'input']: redact(input, url).slice(0, 4000) });
@@ -687,7 +685,7 @@ export async function grantDatabases(run: Run, agent: string, project: Project):
 export function databasesPrompt(project: Project): string {
   const dbs = available(project);
   if (!dbs.length) return '';
-  const list = dbs.map((d) => `- \`${d.name}\` (${engineName(project, d)}, ${d.access === 'write' ? 'write' : 'read-only'})${d.description ? `: ${d.description}` : ''}`);
+  const list = dbs.map((d) => `- \`${d.name}\` (${DB_ENGINES[d.engine]}, ${d.access === 'write' ? 'write' : 'read-only'})${d.description ? `: ${d.description}` : ''}`);
   return `## Databases
 
 The project's databases, through the \`db_list\`, \`db_schema\` and \`db_query\` tools, plus \`db_validate\` in the steps that change code and only for databases marked write. The platform holds the connections: you never see a URL or a credential. The tools exist only when your runtime supports them; without them, work from the code.

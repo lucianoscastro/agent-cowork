@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
-import { api, type Project, type ProjectDatabase, saveSection, type SettingsResponse, type Stack, STACK_NAMES, type TestEnvironment } from '../api';
+import { api, type Project, saveSection, type SettingsResponse, type Stack, STACK_NAMES, type TestEnvironment } from '../api';
 import { useT } from '../i18n';
-import { ProjectDatabases } from './Databases';
+import { type DatabaseDraft, ProjectDatabases } from './Databases';
 import { TestEnvironmentFields } from './TestEnvironment';
 
 const STACKS = Object.keys(STACK_NAMES) as Stack[];
 import { Badge, Button, Empty, Field, Lines, Loading, Message, PageHeader, Select, Text, useAction, useFetch, useUnsaved } from '../ui';
 
 type RepoRow = { repo: string; stack: Stack; verify: string[] };
-type ProjectDraft = { name: string; boardId: string; baseBranch: string; repos: RepoRow[]; environment?: TestEnvironment; databases: ProjectDatabase[] };
+type ProjectDraft = { name: string; boardId: string; baseBranch: string; repos: RepoRow[]; environment?: TestEnvironment; databases: DatabaseDraft[] };
 
 const toDraft = (p: Project): ProjectDraft => ({
   name: p.name,
@@ -20,7 +20,8 @@ const toDraft = (p: Project): ProjectDraft => ({
 });
 const fromDraft = (d: ProjectDraft): Project => ({
   name: d.name,
-  databases: d.databases.map((db) => ({ ...db, name: db.name.trim() })),
+  // Passwords are stored apart, after the project is saved.
+  databases: d.databases.map(({ password: _, ...db }) => ({ ...db, name: db.name.trim() })),
   boardId: d.boardId || undefined,
   baseBranch: d.baseBranch || undefined,
   // The server keys repositories by their folder (the repository name); any unique key works here.
@@ -117,8 +118,13 @@ export function Projects() {
   // Drafts line up with the saved list by position; new ones come after it.
   const saveAt = async (i: number) => {
     const items = [...saved];
-    items[Math.min(i, items.length)] = fromDraft(projects[i]);
+    const draft = projects[i];
+    items[Math.min(i, items.length)] = fromDraft(draft);
     const result = await saveSection('projects', { items });
+    // Each password typed is stored once its database is saved; the draft then forgets it.
+    for (const db of draft.databases.filter((d) => d.password)) {
+      await api('/db-secrets', { method: 'PUT', body: { project: draft.name, name: db.name.trim(), value: db.password } });
+    }
     setProjects((ps) => ps?.map((x, j) => (j === i ? toDraft(result.items[Math.min(i, result.items.length - 1)]) : x)));
     await reload();
   };
@@ -211,11 +217,11 @@ export function Projects() {
           />
           <ProjectDatabases
             project={p.name}
-            savedNames={(saved.find((s) => s.name === p.name)?.databases ?? []).map((d) => d.name)}
+            savedRows={saved.find((s) => s.name === p.name)?.databases ?? []}
             rows={p.databases}
             onChange={(databases) => update(i, { ...p, databases })}
-            targets={data.databases[p.name] ?? {}}
-            onSecretSaved={reload}
+            stored={data.databases[p.name] ?? {}}
+            onSecretChanged={reload}
           />
           <ProjectActions onSave={() => saveAt(i)} onRemove={() => removeAt(i)} />
         </details>

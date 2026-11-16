@@ -8,7 +8,7 @@ import { asset, type AssetSource, DEFAULTS_DIR } from './assets.ts';
 import { type AgentId, dbSecretName, DEFAULTS, envSecretName, PROVIDERS, type Project, type ProviderId, read, SECRETS, type SectionKey, parseTestVars, write } from './config.ts';
 import { brainDir, brainSlug, listNotes } from './brain.ts';
 import { safeEqual, signSession, verifySession } from './crypto.ts';
-import { DB_ENGINES, dbEngine, dbTarget, probeDatabase } from './databases.ts';
+import { databaseUrl, probeDatabase } from './databases.ts';
 import { audit, auditLog, deleteSecret, getSecret, Items, itemsByStatus, needsPerson, secretNames, setSecret } from './db.ts';
 import { env } from './env.ts';
 import { applyGithubEnv, testGithub } from './integrations/github.ts';
@@ -171,11 +171,10 @@ route('GET', '/api/settings', () => ({
   sections: Object.fromEntries((Object.keys(DEFAULTS) as SectionKey[]).map((k) => [k, read(k)])),
   secrets: Object.fromEntries([...ALLOWED_SECRETS].map((name) => [name, secretNames().includes(name)])),
   testVars: Object.fromEntries(read('projects').items.map((p) => [p.name, Object.fromEntries(Object.values(p.repos).map((r) => [r.repo, testVarNames(p.name, r.repo)]))])),
-  // Where each stored database connection points (engine, host, database), never the URL itself.
-  databases: Object.fromEntries(read('projects').items.map((p) => [p.name, Object.fromEntries((p.databases ?? []).flatMap((d) => {
-    const target = dbTarget(getSecret(dbSecretName(p.name, d.name)) ?? '');
-    return target ? [[d.name, { ...target, engine: DB_ENGINES[target.engine] }]] : [];
-  }))])),
+  // Whether each database's password is stored (never the password).
+  databases: ((stored) => Object.fromEntries(read('projects').items.map((p) => [p.name, Object.fromEntries((p.databases ?? []).map((d) => [d.name, stored.has(dbSecretName(p.name, d.name))]))])))(
+    new Set(secretNames()),
+  ),
   providers: Object.fromEntries(PROVIDERS.map((p) => [p, { ...providerStatus(p), account: accountInfo(p) }])),
   agents: Object.fromEntries(AGENTS.map((a) => [a, agentStatus(a)])),
   assets: assetsInfo(),
@@ -187,11 +186,24 @@ route('PUT', '/api/settings/:section', async ({ body, user }, [section]) => {
     const saved = write(section as SectionKey, await body());
     audit(user, 'settings.update', section);
     if (section === 'github') applyGithubEnv();
+    if (section === 'projects') pruneDatabasePasswords(user);
     return saved;
   } catch (err) {
     throw new HttpError(400, (err as Error).message);
   }
 });
+
+/**
+ * Drops the passwords of databases no project lists any more (removed or renamed): a database added later under
+ * the old name must not inherit one, perhaps with another host.
+ */
+function pruneDatabasePasswords(user: string): void {
+  const keep = new Set(read('projects').items.flatMap((p) => (p.databases ?? []).map((d) => dbSecretName(p.name, d.name))));
+  for (const name of secretNames().filter((n) => n.startsWith('db.') && !keep.has(n))) {
+    deleteSecret(name);
+    audit(user, 'secret.delete', name);
+  }
+}
 
 route('PUT', '/api/secrets/:name', async ({ body, user }, [name]) => {
   if (!ALLOWED_SECRETS.has(name)) throw new HttpError(404, 'Unknown secret');
@@ -267,15 +279,15 @@ const projectDatabase = (project: Project, name: unknown) => {
   return found;
 };
 
-/** A database connection URL: stored encrypted, never returned; only the platform's database tools use it. */
+/** A database's password: stored encrypted, never returned; only the platform's database tools use it. */
 route('PUT', '/api/db-secrets', async ({ body, user }) => {
   const b = (await body()) as { project?: unknown; name?: unknown; value?: unknown };
   const project = savedProject(b.project);
   const name = dbSecretName(project.name, projectDatabase(project, b.name).name);
-  const value = str(b.value, 'value').trim();
-  if (value.length > 4000) throw new HttpError(400, 'Value too long');
-  if (!dbEngine(value)) throw new HttpError(400, 'Use a postgresql://, mongodb:// or sqlserver:// URL, or a SQL Server connection string (Server=…;Database=…)');
-  if (dbEngine(value) === 'mongodb' && !dbTarget(value)?.database) throw new HttpError(400, 'Name the database in the MongoDB URL: mongodb://host/<database>');
+  // As typed: a password may start or end with a space.
+  const value = b.value;
+  if (typeof value !== 'string' || !value) throw new HttpError(400, 'password is required');
+  if (value.length > 1000) throw new HttpError(400, 'Value too long');
   setSecret(name, value);
   audit(user, 'secret.set', name);
   return { ok: true };
@@ -288,15 +300,14 @@ route('POST', '/api/db-secrets/delete', async ({ body, user }) => {
   audit(user, 'secret.delete', name);
   return { ok: true };
 });
-/** Connects with the stored URL and reports the server and whether the login can write (errors carry no credential). */
+/** Connects with the saved fields and password and reports the server and what the login can do (errors carry no credential). */
 route('POST', '/api/databases/test', async ({ body }) => {
   const b = (await body()) as { project?: unknown; name?: unknown };
   const project = savedProject(b.project);
   const db = projectDatabase(project, b.name);
-  const url = getSecret(dbSecretName(project.name, db.name));
-  if (!url) throw new HttpError(400, 'Store the connection URL first');
+  if (db.user && getSecret(dbSecretName(project.name, db.name)) === undefined) throw new HttpError(400, 'Save the password first');
   try {
-    return { ...(await probeDatabase(url)), access: db.access };
+    return { ...(await probeDatabase(databaseUrl(project, db))), access: db.access };
   } catch (err) {
     throw new HttpError(400, (err as Error).message);
   }
