@@ -468,11 +468,11 @@ route('POST', '/api/inbox/retry', async ({ body, user }) => {
   const items = new Items(agent, b.dryRun === true);
   const key = str(b.key, 'key');
   const item = items.get(key);
-  // A parked PR follow-up resumes with a fresh round count; a Developer card (waiting for an answer, or failed)
+  // A parked PR follow-up resumes with a fresh round count; a Developer or Product Manager card (waiting for an answer, or failed)
   // runs again on the next poll: forgetting it would drop it, as its Jira status (Blocked, In Progress) no longer
   // matches the trigger. Anything else is picked up from scratch.
   if (item?.status === 'watching') items.watch(key, { ...item.data, parked: false, rounds: 0, lastHead: undefined });
-  else if (item?.status === 'waiting' || (agent === 'developer' && item?.data.project)) items.wait(key, { ...item!.data, resume: true });
+  else if (item?.status === 'waiting' || ((agent === 'developer' || agent === 'pm') && item?.data.project)) items.wait(key, { ...item!.data, resume: true });
   else items.forget(key);
   audit(user, 'inbox.retry', `${agent}: ${String(b.key)}`);
   wake(agent);

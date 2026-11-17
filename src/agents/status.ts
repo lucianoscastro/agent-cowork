@@ -1,9 +1,9 @@
 import { type AgentId, AUDIT_CATEGORIES, projectRepos, read, SECRETS } from '../config.ts';
 import { getSecret } from '../db.ts';
-import { jiraStatus } from '../integrations/jira.ts';
+import { jiraStatus, triggerLabel } from '../integrations/jira.ts';
 import { providerStatus, routeStatus } from '../providers/index.ts';
 
-export const AGENTS: AgentId[] = ['approver', 'dependabot', 'developer', 'auditor', 'sentinel', 'documenter'];
+export const AGENTS: AgentId[] = ['approver', 'dependabot', 'pm', 'developer', 'auditor', 'sentinel', 'documenter'];
 
 const forced = new Set<AgentId>();
 /** Run now: the agent's next poll redoes its work, including items it already handled. */
@@ -24,12 +24,17 @@ export function agentStatus(agent: AgentId): { on: boolean; reason?: string; pau
   const cfg = read(`agents.${agent}`);
   if (!cfg.enabled) return off('Disabled');
   if (!getSecret(SECRETS.githubToken)) return off('GitHub token not set');
-  if (agent === 'developer') {
-    const dev = read('agents.developer');
+  if (agent === 'developer' || agent === 'pm') {
     const jira = jiraStatus();
     if (!jira.ready) return off(jira.reason!);
     if (!read('projects').items.some((p) => p.boardId)) return off('No project has a Jira board');
-    const roles = [['lead', dev.lead], ['reviewer', dev.reviewer], ['second reviewer', dev.secondReviewer]] as const;
+    const dev = read('agents.developer');
+    const pm = read('agents.pm');
+    // The hand-off swaps the label for the Developer's: the same label would send each card back to the Product Manager.
+    if (agent === 'pm' && pm.label === (triggerLabel(dev.triggerJql) ?? 'agent-ready')) return off("The trigger label is the Developer's label");
+    const roles = agent === 'pm'
+      ? ([['lead', pm.lead], ['reviewer', pm.reviewer]] as const)
+      : ([['lead', dev.lead], ['reviewer', dev.reviewer], ['second reviewer', dev.secondReviewer]] as const);
     for (const [role, choice] of roles.filter(([, c]) => !('enabled' in c) || c.enabled)) {
       const p = routeStatus(choice.provider);
       if (!p.ready) return off(`${role}: ${p.reason}`, p.paused);

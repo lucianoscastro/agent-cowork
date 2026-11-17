@@ -271,11 +271,12 @@ export const formatTokens = (n: number | undefined) =>
 /** Estimated cost; a dash when no runtime reported one. */
 export const formatCost = (usd: number | undefined) => (!usd ? '—' : usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`);
 
-export const AGENT_NAMES = { approver: 'Approver', dependabot: 'Dependabot', developer: 'Developer', auditor: 'Auditor', sentinel: 'Sentinel', documenter: 'Documenter' } as const;
+export const AGENT_NAMES = { approver: 'Approver', dependabot: 'Dependabot', pm: 'Product Manager', developer: 'Developer', auditor: 'Auditor', sentinel: 'Sentinel', documenter: 'Documenter' } as const;
 /** One line per agent: what it does, for cards and headers. */
 export const AGENT_SUMMARY = {
   approver: 'Reviews PRs that request your review directly; approves when there is nothing to suggest.',
   dependabot: 'Merges green patch and minor Dependabot PRs; sends the rest to a person.',
+  pm: 'Turns agent-spec Jira cards into spec, design and task documents attached to the card, then hands them to the Developer.',
   developer: 'Turns agent-ready Jira cards into verified PRs and keeps them green until they close.',
   auditor: 'Audits each repository by category (security, privacy, performance…) when its code moves.',
   sentinel: "Runs each test environment's end-to-end suite, reproduces real failures and files them as bugs.",

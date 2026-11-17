@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
-import { reviewPasses, validPromotion } from '../src/agents/developer.ts';
+import { reviewPasses, specBrief, validPromotion } from '../src/agents/developer.ts';
+import { save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
@@ -13,7 +14,7 @@ import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, valida
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { getSecret, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, hasAnswer, missing, toAdf } from '../src/integrations/jira.ts';
+import { adfToText, currentDocs, hasAnswer, markdownName, missing, toAdf, triggerLabel } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -1082,4 +1083,47 @@ test('databases: a run gets read tools, validation only with write, and nothing 
   assert.equal((await rpc({ url: grant.read.url, token: 'forged' }, 'tools/list')).status, 401);
   grant.revoke();
   assert.equal((await rpc(grant.write, 'tools/list')).status, 401);
+});
+
+test('product manager: settings, attachments, the documents it saves, the brief and the hand-off label', async () => {
+  // Saved before the agent existed: every field gets its default.
+  assert.deepEqual(read('agents.pm').limits, { specReview: 2, runMinutes: 60 });
+  const pm = { ...read('agents.pm'), enabled: true };
+  assert.equal(write('agents.pm', pm).label, 'agent-spec');
+  assert.throws(() => write('agents.pm', { ...pm, label: 'agent spec' }), /one Jira label/);
+  assert.throws(() => write('agents.pm', { ...pm, label: 'x" OR project = OTHER' }), /one Jira label/);
+
+  // Attachments are saved under their own name: never a path.
+  for (const ok of ['spec.md', 'tasks.md', 'ADR-01-orders-export-format.md', 'Notes (v2).md']) assert.equal(markdownName(ok), true, ok);
+  for (const bad of ['../spec.md', 'a/spec.md', '.env.md', 'spec.md.exe', 'spec.txt', '..md']) assert.equal(markdownName(bad), false, bad);
+  // A new version drops tasks.md by leaving it out: only the set attached with the newest spec.md counts.
+  const at = (filename: string, created: string) => ({ filename, created });
+  const docs = currentDocs([
+    at('spec.md', '2026-11-01T10:00:00.000+0000'),
+    at('tasks.md', '2026-11-01T10:00:01.000+0000'),
+    at('notes.md', '2026-11-01T09:00:00.000+0000'),
+    at('spec.md', '2026-11-05T10:00:00.000+0000'),
+    at('ADR-01-csv.md', '2026-11-05T10:00:01.000+0000'),
+    at('run.sh', '2026-11-05T10:00:01.000+0000'),
+  ]);
+  assert.deepEqual(docs.map((d) => `${d.filename} ${d.created.slice(5, 10)}`), ['spec.md 11-05', 'ADR-01-csv.md 11-05', 'notes.md 11-01']);
+
+  // The lead returns the documents; the platform writes only names of the layout, and a dropped one goes.
+  const folder = mkdtempSync(join(tmpdir(), 'acw-spec-'));
+  writeFileSync(join(folder, 'tasks.md'), 'old');
+  writeFileSync(join(folder, 'notes.md'), 'a person');
+  await saveSpec(undefined, folder, [{ name: 'spec.md', content: '# Spec' }, { name: '../evil.md', content: 'x' }, { name: 'design.md', content: '# D' }]);
+  assert.deepEqual(readdirSync(folder).sort(), ['design.md', 'notes.md', 'spec.md']);
+  await assert.rejects(saveSpec(undefined, folder, [{ name: 'tasks.md', content: 't' }]), /no spec.md/);
+
+  assert.equal(specBrief('spec', []), '');
+  assert.match(specBrief('spec', ['notes.md']), /^## Card attachments[\s\S]*`spec\/notes.md`/);
+  const brief = specBrief('spec', ['spec.md', 'tasks.md']);
+  assert.match(brief, /^## Spec/);
+  assert.match(brief, /`spec\/spec.md`, `spec\/tasks.md`/);
+  assert.match(brief, /Every acceptance criterion gets a test/);
+
+  assert.equal(triggerLabel('labels = "agent-ready" AND statusCategory != Done'), 'agent-ready');
+  assert.equal(triggerLabel('project = ABC AND labels in (build-me, other)'), 'build-me');
+  assert.equal(triggerLabel('status = "To Do"'), undefined);
 });

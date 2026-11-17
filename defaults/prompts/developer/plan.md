@@ -24,6 +24,8 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
 
 {{reviewContext}}
 
+{{spec}}
+
 {{brain}}
 
 {{databases}}

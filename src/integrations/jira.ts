@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { read, SECRETS } from '../config.ts';
 import { getSecret } from '../db.ts';
 
@@ -76,6 +78,54 @@ export const missing = (err: unknown) => /: 404 /.test((err as Error).message);
 
 export function getIssue(key: string): Promise<Issue> {
   return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status`);
+}
+
+/** Takes labels off a card and puts others on, in one update (a label already in that state is a no-op). */
+export async function relabel(key: string, remove: string[], add: string[]): Promise<void> {
+  await api(`api/3/issue/${key}`, { method: 'PUT', body: { update: { labels: [...remove.map((l) => ({ remove: l })), ...add.map((l) => ({ add: l }))] } } });
+}
+
+/** The label a trigger JQL selects cards by (`labels = "x"` or `labels in (x, …)`), if it has one. Exported for tests. */
+export const triggerLabel = (jql: string): string | undefined => /labels\s*(?:=|in\s*\()\s*"?([\w.-]+)/i.exec(jql)?.[1];
+
+type Attachment = { filename: string; created: string; size: number; content: string };
+/** A name safe to save under a folder: a Markdown file name, no path. Exported for tests. */
+export const markdownName = (name: string) => /^[\w][\w .()-]{0,120}\.md$/i.test(name) && !name.includes('..');
+/** The Product Manager's documents. Each version is attached as a whole set, so a version drops one by leaving it out. */
+export const SPEC_DOC = /^(spec|design|tasks)\.md$|^ADR-\d{2}-[\w-]{1,80}\.md$/;
+
+/**
+ * Which Markdown attachments a run reads, the newest of each name: people's notes, and of the spec documents only
+ * the set attached with the newest `spec.md`. Exported for tests.
+ * ponytail: a version is one upload, seconds apart; a minute of slack.
+ */
+export function currentDocs<T extends Pick<Attachment, 'filename' | 'created'>>(attachments: T[]): T[] {
+  const sorted = attachments.filter((a) => markdownName(a.filename)).sort((x, y) => Date.parse(x.created) - Date.parse(y.created));
+  const spec = sorted.findLast((a) => a.filename === 'spec.md');
+  const since = spec ? Date.parse(spec.created) - 60_000 : 0;
+  const latest = new Map<string, T>();
+  for (const a of sorted) if (!SPEC_DOC.test(a.filename) || Date.parse(a.created) >= since) latest.set(a.filename, a);
+  // The spec documents first: a cap on the count never drops them for people's notes.
+  const all = [...latest.values()];
+  return [...all.filter((a) => SPEC_DOC.test(a.filename)), ...all.filter((a) => !SPEC_DOC.test(a.filename))];
+}
+
+/**
+ * Saves the card's current Markdown attachments in `dir` (see `currentDocs`) and returns their names. Credentials
+ * go only to the configured Jira site.
+ * ponytail: at most 20 files of up to 200 KB each; a card's spec is a handful of small files.
+ */
+export async function saveMarkdownAttachments(key: string, dir: string): Promise<string[]> {
+  const { url, email } = read('jira');
+  const { fields } = await api<{ fields: { attachment?: Attachment[] } }>(`api/3/issue/${key}?fields=attachment`);
+  const files = currentDocs((fields.attachment ?? []).filter((a) => a.size <= 200_000 && a.content.startsWith(`${url}/`))).slice(0, 20);
+  await mkdir(dir, { recursive: true });
+  for (const a of files) {
+    const res = await fetch(a.content, { headers: { Authorization: `Basic ${btoa(`${email}:${getSecret(SECRETS.jiraToken) ?? ''}`)}` } });
+    if (!res.ok) throw new Error(`Jira attachment ${a.filename} of ${key}: ${res.status}`);
+    await writeFile(join(dir, a.filename), Buffer.from(await res.arrayBuffer()));
+  }
+  return files.map((a) => a.filename);
 }
 
 /** Accepts either the transition name or its target status name, case-insensitively. */

@@ -21,6 +21,8 @@ Review the implementation plan for Jira issue {{key}} ("{{summary}}") before any
 {{plan}}
 </plan>
 
+{{spec}}
+
 {{brain}}
 
 {{databases}}

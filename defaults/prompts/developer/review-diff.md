@@ -20,6 +20,8 @@ Audit the change made for Jira issue {{key}} ("{{summary}}") before it becomes a
 {{plan}}
 </plan>
 
+{{spec}}
+
 {{brain}}
 
 {{databases}}

@@ -82,6 +82,7 @@ Skills load by description. When a task falls in a skill's domain, use the skill
 | Need | Skill |
 | --- | --- |
 | Coding rules (TS/JS/React/Node: readability, KISS, DRY, YAGNI) | `code-rules` |
+| Turning a card into spec documents (spec, tasks, design, ADRs), or reviewing them | `spec-writing` |
 | Full code review | `review-code` |
 | Tests, red-green-refactor, regression tests | `tdd-workflow` |
 | APIs, services, data access, error handling | `backend-patterns` |

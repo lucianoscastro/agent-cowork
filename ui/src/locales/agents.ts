@@ -67,6 +67,16 @@ const translations = {
     'Diff review rounds': 'Rodadas de revisão do diff',
     'Rounds on a red PR before asking a human': 'Rodadas num PR vermelho antes de chamar uma pessoa',
     'Max minutes per run': 'Máximo de minutos por execução',
+    // Product Manager
+    "Picks cards with the trigger label (agent-spec by default) from each project's Jira board and writes their spec documents: spec.md (the problem and the acceptance criteria), tasks.md, and design.md and ADRs when needed. Gray areas are asked on the card first, in one batch of numbered questions; the run resumes when someone answers. The reviewer checks the documents, then they are attached to the card and the card goes straight to the Developer: the trigger label is swapped for agent-ready. To change a spec, comment what to change and put the label back. It never writes code and never changes priority or estimates.":
+      'Pega os cards com a label de gatilho (agent-spec por padrão) no board do Jira de cada projeto e escreve os seus documentos de especificação: spec.md (o problema e os critérios de aceite), tasks.md, e design.md e ADRs quando necessário. Os pontos em aberto são perguntados primeiro no card, em um único lote de perguntas numeradas; a execução retoma quando alguém responde. O revisor confere os documentos; depois eles são anexados ao card e o card vai direto para o Developer: a label de gatilho é trocada por agent-ready. Para mudar uma especificação, comente o que mudar e coloque a label de volta. Nunca escreve código nem muda prioridade ou estimativas.',
+    'Trigger label': 'Label de gatilho',
+    "The Jira label that sends a card to the Product Manager; at the hand-off it is swapped for the Developer's label.":
+      'A label do Jira que envia um card para o Product Manager; na passagem, ela é trocada pela label do Developer.',
+    'An independent reviewer checks the documents before they go to the card.': 'Um revisor independente confere os documentos antes de eles irem para o card.',
+    Reviewer: 'Revisor',
+    'Spec review rounds': 'Rodadas de revisão da especificação',
+    'Looking for cards with the trigger label now, including the ones already specified.': 'Procurando agora cards com a label de gatilho, inclusive os já especificados.',
     // Approver
     'Reviews in parallel': 'Revisões em paralelo',
     // Dependabot
@@ -204,6 +214,16 @@ const translations = {
     'Diff review rounds': 'Rondas de revisión del diff',
     'Rounds on a red PR before asking a human': 'Rondas en un PR en rojo antes de avisar a una persona',
     'Max minutes per run': 'Máximo de minutos por ejecución',
+    // Product Manager
+    "Picks cards with the trigger label (agent-spec by default) from each project's Jira board and writes their spec documents: spec.md (the problem and the acceptance criteria), tasks.md, and design.md and ADRs when needed. Gray areas are asked on the card first, in one batch of numbered questions; the run resumes when someone answers. The reviewer checks the documents, then they are attached to the card and the card goes straight to the Developer: the trigger label is swapped for agent-ready. To change a spec, comment what to change and put the label back. It never writes code and never changes priority or estimates.":
+      'Toma las tarjetas con la etiqueta de disparo (agent-spec por defecto) del tablero de Jira de cada proyecto y escribe sus documentos de especificación: spec.md (el problema y los criterios de aceptación), tasks.md, y design.md y ADR cuando hacen falta. Las zonas grises se preguntan primero en la tarjeta, en un único lote de preguntas numeradas; la ejecución se reanuda cuando alguien responde. El revisor comprueba los documentos; después se adjuntan a la tarjeta y la tarjeta pasa directamente al Developer: la etiqueta de disparo se cambia por agent-ready. Para cambiar una especificación, comenta qué cambiar y vuelve a poner la etiqueta. Nunca escribe código ni cambia la prioridad o las estimaciones.',
+    'Trigger label': 'Etiqueta de disparo',
+    "The Jira label that sends a card to the Product Manager; at the hand-off it is swapped for the Developer's label.":
+      'La etiqueta de Jira que envía una tarjeta al Product Manager; al pasarla, se cambia por la etiqueta del Developer.',
+    'An independent reviewer checks the documents before they go to the card.': 'Un revisor independiente comprueba los documentos antes de que vayan a la tarjeta.',
+    Reviewer: 'Revisor',
+    'Spec review rounds': 'Rondas de revisión de la especificación',
+    'Looking for cards with the trigger label now, including the ones already specified.': 'Buscando ahora tarjetas con la etiqueta de disparo, incluidas las ya especificadas.',
     // Approver
     'Reviews in parallel': 'Revisiones en paralelo',
     // Dependabot

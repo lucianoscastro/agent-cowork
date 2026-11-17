@@ -4,6 +4,7 @@ import { pollDeveloper } from './agents/developer.ts';
 import { pollAuditor } from './agents/auditor.ts';
 import { pollSentinel } from './agents/sentinel.ts';
 import { pollDocumenter } from './agents/documenter.ts';
+import { pollPm } from './agents/pm.ts';
 import { AGENTS, agentStatus, forceAgent, isForced } from './agents/status.ts';
 import { type AgentId, read } from './config.ts';
 import { applyGithubEnv } from './integrations/github.ts';
@@ -16,6 +17,7 @@ const POLLERS: Record<AgentId, () => Promise<void>> = {
   auditor: pollAuditor,
   sentinel: pollSentinel,
   documenter: pollDocumenter,
+  pm: pollPm,
 };
 
 export const lastPoll: Partial<Record<AgentId, string>> = {};

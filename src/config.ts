@@ -3,7 +3,7 @@ import { getSetting, putSetting } from './db.ts';
 export const PROVIDERS = ['claude', 'codex', 'agy'] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
 export type AuthMethod = 'api-key' | 'account';
-export type AgentId = 'approver' | 'dependabot' | 'developer' | 'auditor' | 'sentinel' | 'documenter';
+export type AgentId = 'approver' | 'dependabot' | 'developer' | 'auditor' | 'sentinel' | 'documenter' | 'pm';
 /** Each agent goes live on its own: in dry run (shadow mode) it reads and decides but writes nothing to GitHub or Jira. */
 type Shadow = { dryRun: boolean };
 
@@ -131,6 +131,16 @@ export type Settings = {
     exploreEveryHours: number;
     bugIssueType: string;
   };
+  // A card with `label` gets its spec documents (spec, design, ADRs, tasks) as Markdown attachments, then goes
+  // straight to the Developer: the label is swapped for the Developer's.
+  'agents.pm': Shadow & {
+    enabled: boolean;
+    label: string;
+    lead: ModelChoice;
+    reviewer: Reviewer;
+    limits: { specReview: number; runMinutes: number };
+    concurrency: number;
+  };
   'agents.developer': Shadow & {
     enabled: boolean;
     triggerJql: string;
@@ -214,6 +224,15 @@ export const DEFAULTS: Settings = {
     exploreEveryHours: 6,
     bugIssueType: 'Bug',
   },
+  'agents.pm': {
+    enabled: false,
+    dryRun: true,
+    label: 'agent-spec',
+    lead: { provider: 'claude', model: 'opus' },
+    reviewer: { enabled: true, provider: 'codex', model: '' },
+    limits: { specReview: 2, runMinutes: 60 },
+    concurrency: 1,
+  },
   'agents.developer': {
     enabled: false,
     dryRun: true,
@@ -282,6 +301,11 @@ export function read<K extends SectionKey>(key: K): Settings[K] {
       secondReviewer: { ...d.secondReviewer, ...dev.secondReviewer },
     } as Settings[K];
   }
+  if (key === 'agents.pm') {
+    const pm = value as Settings['agents.pm'];
+    const d = DEFAULTS['agents.pm'];
+    return { ...d, ...pm, limits: { ...d.limits, ...pm.limits }, reviewer: { ...d.reviewer, ...pm.reviewer } } as Settings[K];
+  }
   // Fields added in later versions get their default in sections saved before them.
   return { ...DEFAULTS[key], ...value };
 }
@@ -308,6 +332,12 @@ function str(o: Obj, k: string, where: string, { required = false, max = 2000 } 
   if (required && !v.trim()) throw new Error(`${where}.${k} is required`);
   if (v.length > max) throw new Error(`${where}.${k} is too long`);
   return v.trim();
+}
+/** One Jira label: no spaces, so it is safe inside the JQL it builds. */
+function jiraLabel(o: Obj, where: string): string {
+  const label = str(o, 'label', where, { required: true, max: 60 });
+  if (!/^[\w.-]+$/.test(label)) throw new Error(`${where}.label must be one Jira label: letters, digits, dots, dashes or underscores`);
+  return label;
 }
 function bool(o: Obj, k: string, where: string): boolean {
   if (typeof o[k] !== 'boolean') throw new Error(`${where}.${k} must be true or false`);
@@ -529,6 +559,17 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           throw new Error(`${key}.folder must be a folder inside the repository, e.g. .agents or docs/architecture`);
         }
         return { enabled: bool(o, 'enabled', key), ...choice(o, key), intervalDays: int(o, 'intervalDays', key, 1, 365), concurrency: int(o, 'concurrency', key, 1, 4), folder };
+      }
+      case 'agents.pm': {
+        const limits = obj(o.limits, `${key}.limits`);
+        return {
+          enabled: bool(o, 'enabled', key),
+          label: jiraLabel(o, key),
+          lead: choice(o.lead, `${key}.lead`),
+          reviewer: reviewer(o.reviewer, `${key}.reviewer`),
+          limits: { specReview: int(limits, 'specReview', `${key}.limits`, 0, 10), runMinutes: int(limits, 'runMinutes', `${key}.limits`, 5, 600) },
+          concurrency: int(o, 'concurrency', key, 1, 4),
+        };
       }
       case 'agents.auditor': {
         const categories = obj(o.categories, `${key}.categories`);

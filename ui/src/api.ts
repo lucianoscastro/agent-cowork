@@ -32,7 +32,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   return data as T;
 }
 
-export type AgentId = 'approver' | 'dependabot' | 'developer' | 'auditor' | 'sentinel' | 'documenter';
+export type AgentId = 'approver' | 'dependabot' | 'developer' | 'auditor' | 'sentinel' | 'documenter' | 'pm';
 export type AuditCategory = 'security' | 'privacy' | 'performance' | 'reliability' | 'tests' | 'code-health' | 'dependencies' | 'accessibility';
 export const AUDIT_CATEGORIES: { id: AuditCategory; name: string; skill: string; scope: string }[] = [
   { id: 'security', name: 'Security', skill: 'check-pre-deploy', scope: 'Tenant isolation, authorization, IDOR, secrets, injection, XSS, uploads (20 checks)' },
@@ -161,6 +161,15 @@ export type Sections = {
     exploreMinutes: number;
     exploreEveryHours: number;
     bugIssueType: string;
+  };
+  /** A card with `label` gets its spec documents as attachments, then goes straight to the Developer. */
+  'agents.pm': Shadow & {
+    enabled: boolean;
+    label: string;
+    lead: ModelChoice;
+    reviewer: ModelChoice & { enabled: boolean };
+    limits: { specReview: number; runMinutes: number };
+    concurrency: number;
   };
   'agents.developer': Shadow & {
     enabled: boolean;

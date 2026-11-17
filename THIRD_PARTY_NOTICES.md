@@ -35,6 +35,14 @@ The `ui-taste` skill in `defaults/skills/ui-taste/` (`origin: custom`) is synthe
 superdesign's `superdesign-skill` (MIT). Its product-UI rules, Portuguese copy tells and scanner are additions.
 Each source is used under its own license; the Apache License 2.0 text is at https://www.apache.org/licenses/LICENSE-2.0.
 
+## spec-writing
+
+The `spec-writing` skill in `defaults/skills/spec-writing/` (`origin: adapted`) is adapted from the `tlc-plan` and
+`tlc-spec-driven` skills of [Tech Leads Club agent-skills](https://github.com/tech-leads-club/agent-skills)
+(Creative Commons Attribution 4.0, https://creativecommons.org/licenses/by/4.0/) and from the question protocol and
+ADR template of compozy's `cy-create-spec` skill ([compozy](https://github.com/compozy/compozy), MIT, Copyright (c) 2026
+NauckGroup LTDA). Its `NOTICE.md` holds the full attribution, the MIT notice and the list of changes.
+
 ## ponytail
 
 The "Lazy Senior Developer Mindset" section of `defaults/AGENTS.md` is taken from

@@ -17,6 +17,8 @@ Address the independent reviewer's findings on your change for Jira issue {{key}
 - After you finish, the platform runs every "must pass" command again, and the reviewer looks at the new diff.
 - A disputed finding stops the run and goes to a human, with both positions. Dispute only when you are sure the finding is wrong.
 
+{{spec}}
+
 {{brain}}
 
 {{databases}}

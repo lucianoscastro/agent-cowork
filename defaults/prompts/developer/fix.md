@@ -22,6 +22,8 @@ Make your change for Jira issue {{key}} of the project "{{project}}" ("{{summary
 {{description}}
 </issue>
 
+{{spec}}
+
 {{brain}}
 
 {{databases}}

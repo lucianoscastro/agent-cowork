@@ -44,6 +44,8 @@ function SaveRow({ action, onSave }: { action: ReturnType<typeof useAction>; onS
 }
 
 const DESCRIPTIONS: Record<AgentId, string> = {
+  pm:
+    "Picks cards with the trigger label (agent-spec by default) from each project's Jira board and writes their spec documents: spec.md (the problem and the acceptance criteria), tasks.md, and design.md and ADRs when needed. Gray areas are asked on the card first, in one batch of numbered questions; the run resumes when someone answers. The reviewer checks the documents, then they are attached to the card and the card goes straight to the Developer: the trigger label is swapped for agent-ready. To change a spec, comment what to change and put the label back. It never writes code and never changes priority or estimates.",
   developer:
     "Picks agent-ready cards from each project's Jira board, plans with the lead, has the reviewer check the plan and the diff, verifies with the repository commands and opens a PR per changed repository. Then it follows each PR until it is merged or closed: it answers every review comment (fixing it, or declining it with a justification) and keeps the pipeline green, including quality gates such as SonarQube. Merging stays with humans.",
   approver:
@@ -74,19 +76,50 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
   const [auditor, setAuditor] = useSection(settings, 'agents.auditor');
   const [sentinel, setSentinel] = useSection(settings, 'agents.sentinel');
   const [documenter, setDocumenter] = useSection(settings, 'agents.documenter');
+  const [pm, setPm] = useSection(settings, 'agents.pm');
   const a = useAction();
   const b = useAction();
   const c = useAction();
   const d = useAction();
   const e = useAction();
   const f = useAction();
-  if (!approver || !dependabot || !developer || !auditor || !sentinel || !documenter) return <Loading />;
+  const g = useAction();
+  if (!approver || !dependabot || !developer || !auditor || !sentinel || !documenter || !pm) return <Loading />;
   const save = <K extends keyof Sections>(action: ReturnType<typeof useAction>, key: K, value: Sections[K]) =>
     action.run(async () => {
       await saveSection(key, value);
       await reload();
     });
   switch (id) {
+    case 'pm':
+      return (
+        <Card>
+          <div className="row fields">
+            <Field label="Trigger label" hint="The Jira label that sends a card to the Product Manager; at the hand-off it is swapped for the Developer's label.">
+              <Text value={pm.label} onChange={(label) => setPm({ ...pm, label })} placeholder="agent-spec" />
+            </Field>
+            <Field label="Cards in parallel" hint="Across all projects, the same project included. Each card has its own checkout and branch.">
+              <Num value={pm.concurrency} min={1} max={4} onChange={(concurrency) => setPm({ ...pm, concurrency })} />
+            </Field>
+          </div>
+          <h3>{t('Team')}</h3>
+          <p className="small muted">{t('Lead')}</p>
+          <ModelPicker value={pm.lead} onChange={(lead) => setPm({ ...pm, lead })} settings={settings} />
+          <p className="small muted">{t('An independent reviewer checks the documents before they go to the card.')}</p>
+          <Toggle checked={pm.reviewer.enabled} onChange={(enabled) => setPm({ ...pm, reviewer: { ...pm.reviewer, enabled } })} label="Reviewer" />
+          {pm.reviewer.enabled && <ModelPicker value={pm.reviewer} onChange={(r) => setPm({ ...pm, reviewer: { ...r, enabled: true } })} settings={settings} />}
+          <h3>{t('Loop limits')}</h3>
+          <div className="row">
+            <Field label="Spec review rounds">
+              <Num value={pm.limits.specReview} min={0} max={10} onChange={(specReview) => setPm({ ...pm, limits: { ...pm.limits, specReview } })} />
+            </Field>
+            <Field label="Max minutes per run">
+              <Num value={pm.limits.runMinutes} min={5} max={600} onChange={(runMinutes) => setPm({ ...pm, limits: { ...pm.limits, runMinutes } })} />
+            </Field>
+          </div>
+          <SaveRow action={g} onSave={() => save(g, 'agents.pm', pm)} />
+        </Card>
+      );
     case 'developer':
       return (
         <Card>
@@ -375,6 +408,7 @@ const RUN_NOW: Record<AgentId, string> = {
   sentinel: 'Running the end-to-end suites and the explorations now.',
   dependabot: 'Assessing every open Dependabot PR again now, including the ones already handled.',
   approver: 'Reviewing every PR that still requests your review now, including commits already reviewed.',
+  pm: 'Looking for cards with the trigger label now, including the ones already specified.',
   developer: 'Looking for agent-ready cards now. Cards already picked are not redone (that would open a second PR).',
   documenter: 'Documenting every repository now, whatever its interval or last commit.',
 };
