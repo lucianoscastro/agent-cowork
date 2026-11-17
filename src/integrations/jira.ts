@@ -71,6 +71,9 @@ export async function searchBoard(boardId: string, jql: string): Promise<string[
   return issues.map((i) => i.key);
 }
 
+/** Jira answers 404 for a deleted card, and for one this account can no longer see. */
+export const missing = (err: unknown) => /: 404 /.test((err as Error).message);
+
 export function getIssue(key: string): Promise<Issue> {
   return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status`);
 }

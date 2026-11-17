@@ -106,10 +106,6 @@ export async function pollDeveloper(): Promise<void> {
   const items = new Items('developer', dryRun);
   const projects = read('projects').items;
   const waiting = items.list('waiting');
-  // Failed on a provider limit (no attempt used): back in the queue once the provider is available again,
-  // whatever the card's status now (a resumed card sits in Blocked or In Progress, outside the trigger JQL).
-  // Out of retries or stopped from the UI, it waits for a person: done on the board, it leaves the inbox.
-  const limited = [...items.list('failed'), ...items.list('human')].filter((f) => f.data.project);
   const waitingKeys = new Set(waiting.map((w) => w.key));
   const queue = new Map<string, Project>();
   // ponytail: one board search per project per poll; fine for a handful of projects.
@@ -119,25 +115,21 @@ export async function pollDeveloper(): Promise<void> {
       if (!waitingKeys.has(key) && !queue.has(key) && !items.skip(key)) queue.set(key, project);
     }
   }
-  // Cards waiting for a human resume only when someone answers on the card.
-  for (const f of limited) {
-    const project = projects.find((p) => p.name === f.data.project);
-    if (!project || queue.has(f.key)) continue;
+  // Cards left waiting, failed or with a person: done on the board or deleted, they leave the inbox. A waiting card
+  // resumes once someone answers on it; one failed on a provider limit (no attempt used) is queued again once the provider
+  // is back, whatever the card's status now (a resumed card sits in Blocked or In Progress, outside the trigger JQL).
+  for (const c of [...waiting, ...items.list('failed'), ...items.list('human')]) {
+    if (!c.data.project || queue.has(c.key)) continue;
+    const project = projects.find((p) => p.name === c.data.project);
     try {
-      if ((await jira.getIssue(f.key)).fields.status.statusCategory.key === 'done') items.done(f.key, { closed: true });
-      else if (f.status === 'failed' && f.attempts < MAX_ATTEMPTS) queue.set(f.key, project);
+      const issue = await jira.getIssue(c.key);
+      const resume = c.status === 'waiting' ? c.data.resume || jira.hasAnswer(issue.fields.comment.comments, String(c.data.waitingSince)) : c.status === 'failed' && c.attempts < MAX_ATTEMPTS;
+      if (issue.fields.status.statusCategory.key === 'done') items.done(c.key, { closed: true });
+      else if (project && resume) queue.set(c.key, project);
     } catch (err) {
-      log(`developer: checking ${f.key} on the board failed:`, (err as Error).message);
-    }
-  }
-  for (const w of waiting) {
-    try {
-      const issue = await jira.getIssue(w.key);
-      const project = projects.find((p) => p.name === w.data.project);
-      if (issue.fields.status.statusCategory.key === 'done') items.done(w.key, { closed: true });
-      else if (project && (w.data.resume || jira.hasAnswer(issue.fields.comment.comments, String(w.data.waitingSince)))) queue.set(w.key, project);
-    } catch (err) {
-      log(`developer: checking ${w.key} for an answer failed:`, (err as Error).message);
+      // ponytail: a 404 is also what an account that lost access to the project gets; its cards leave the inbox too.
+      if (jira.missing(err)) items.done(c.key, { closed: true, missing: true });
+      else log(`developer: checking ${c.key} on the board failed:`, (err as Error).message);
     }
   }
   const tasks = [...queue].map(([key, project]) => ({ project, run: () => handle(items, key, project, dryRun) }));

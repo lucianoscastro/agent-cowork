@@ -13,7 +13,7 @@ import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, valida
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { getSecret, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, hasAnswer, toAdf } from '../src/integrations/jira.ts';
+import { adfToText, hasAnswer, missing, toAdf } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -196,6 +196,10 @@ test('jira helpers flatten rich text and detect answers', () => {
   assert.equal(hasAnswer([c('2026-10-22T09:00:00.000+0000', 'old')], since), false);
   assert.equal(hasAnswer([c('2026-10-22T11:00:00.000+0000', '🤖 bot')], since), false);
   assert.equal(hasAnswer([c('2026-10-22T11:00:00.000+0000', 'use v2')], since), true);
+  // A deleted card: its item leaves the inbox. Any other failure keeps it for the next poll.
+  assert.equal(missing(new Error('Jira GET api/3/issue/ABC-1: 404 {"errorMessages":["Issue does not exist"]}')), true);
+  assert.equal(missing(new Error('Jira GET api/3/issue/ABC-1: 401 Unauthorized')), false);
+  assert.equal(missing(new Error('fetch failed')), false);
 });
 
 test('forEachLimit bounds parallelism; withLock serializes and survives failures', async () => {

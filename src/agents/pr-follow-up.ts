@@ -131,8 +131,13 @@ export async function followUpTasks(items: Items, projects: Project[], dryRun: b
         const { mergedTransition } = read('agents.developer');
         // Merged: the card moves on. Closed without a merge: someone else decides where it goes.
         if (merged && !dryRun) {
-          await jira.comment(item.key, `${BOT_MARK} Pull requests merged:\n${prs.map((pr) => pr.url).join('\n')}`);
-          if (mergedTransition) await jira.transition(item.key, mergedTransition);
+          try {
+            await jira.comment(item.key, `${BOT_MARK} Pull requests merged:\n${prs.map((pr) => pr.url).join('\n')}`);
+            if (mergedTransition) await jira.transition(item.key, mergedTransition);
+          } catch (err) {
+            // A card deleted meanwhile has nowhere to move; its PRs are done all the same.
+            if (!jira.missing(err)) throw err;
+          }
         }
         items.done(item.key, { ...item.data, closed: snaps.map((s, i) => `${prs[i].url}: ${s.state.toLowerCase()}`) });
         log(`developer: ${item.key} PRs ${merged ? 'merged' : 'closed'}, card done`);
