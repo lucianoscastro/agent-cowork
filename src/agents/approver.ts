@@ -63,10 +63,12 @@ export async function pollApprover(): Promise<void> {
   // Only repositories of a configured project: a review request elsewhere is not this instance's business.
   const known = new Set(projectRepos().map((r) => r.repo));
   const mine = hits.filter((h) => known.has(h.repository.nameWithOwner));
+  const heads = new Map<string, string>();
   await forEachLimit(mine, cfg.concurrency, async (hit) => {
     try {
       const pr = await ghJson<PullRequest>(['pr', 'view', hit.url, '--json', 'headRefOid,baseRefName,title,body']);
       const key = `${hit.url}@${pr.headRefOid}`;
+      heads.set(hit.url, key);
       if (!force && items.skip(key)) return;
       // Listed by a project (filtered above): whose brain the review reads and teaches.
       const project = projectOf(hit.repository.nameWithOwner)!.name;
@@ -80,6 +82,14 @@ export async function pollApprover(): Promise<void> {
       log(`approver: ${hit.url} failed:`, (err as Error).message);
     }
   });
+  // Left for a person, then no longer asking for this review (merged, closed, reviewed) or on a newer commit: out of the inbox.
+  // ponytail: only below the 50-PR search limit; past it, a PR may just be unlisted.
+  if (hits.length < 50) {
+    items.closeGone((key) => {
+      const url = key.slice(0, key.lastIndexOf('@'));
+      return !mine.some((h) => h.url === url) || (heads.has(url) && heads.get(url) !== key);
+    });
+  }
 }
 
 /**

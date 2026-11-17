@@ -154,6 +154,11 @@ export class Items {
     this.#put(key, 'watching', 0, data);
   }
 
+  /** Items left for a person whose subject is gone (a PR merged or closed, a commit replaced): done, out of the inbox. */
+  closeGone(gone: (key: string) => boolean): void {
+    for (const status of ['human', 'failed'] as const) for (const i of this.list(status)) if (gone(i.key)) this.done(i.key, { ...i.data, gone: true });
+  }
+
   forget(key: string): void {
     sql().prepare('DELETE FROM items WHERE key = ?').run(this.#prefix + key);
   }

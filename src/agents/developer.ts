@@ -108,7 +108,8 @@ export async function pollDeveloper(): Promise<void> {
   const waiting = items.list('waiting');
   // Failed on a provider limit (no attempt used): back in the queue once the provider is available again,
   // whatever the card's status now (a resumed card sits in Blocked or In Progress, outside the trigger JQL).
-  const limited = items.list('failed').filter((f) => f.attempts < MAX_ATTEMPTS && f.data.project);
+  // Out of retries or stopped from the UI, it waits for a person: done on the board, it leaves the inbox.
+  const limited = [...items.list('failed'), ...items.list('human')].filter((f) => f.data.project);
   const waitingKeys = new Set(waiting.map((w) => w.key));
   const queue = new Map<string, Project>();
   // ponytail: one board search per project per poll; fine for a handful of projects.
@@ -124,9 +125,9 @@ export async function pollDeveloper(): Promise<void> {
     if (!project || queue.has(f.key)) continue;
     try {
       if ((await jira.getIssue(f.key)).fields.status.statusCategory.key === 'done') items.done(f.key, { closed: true });
-      else queue.set(f.key, project);
+      else if (f.status === 'failed' && f.attempts < MAX_ATTEMPTS) queue.set(f.key, project);
     } catch (err) {
-      log(`developer: checking ${f.key} after a provider limit failed:`, (err as Error).message);
+      log(`developer: checking ${f.key} on the board failed:`, (err as Error).message);
     }
   }
   for (const w of waiting) {

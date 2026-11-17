@@ -371,6 +371,21 @@ test('live output: transcripts of every runtime become terminal lines', () => {
   assert.deepEqual(agy.map((l) => l.kind), ['say', 'info']);
 });
 
+test('items left for a person leave the inbox once their subject is gone', () => {
+  const items = new Items('dependabot', false);
+  items.human('https://github.com/acme/web/pull/1@a', { url: 'u' });
+  items.human('https://github.com/acme/web/pull/2@b', { url: 'u' });
+  items.fail('https://github.com/acme/web/pull/3@c', 'boom');
+  items.wait('https://github.com/acme/web/pull/4@d', {});
+  items.closeGone((key) => !key.endsWith('@b'));
+  assert.equal(items.get('https://github.com/acme/web/pull/1@a')?.status, 'done');
+  assert.equal(items.get('https://github.com/acme/web/pull/2@b')?.status, 'human');
+  assert.equal(items.get('https://github.com/acme/web/pull/3@c')?.status, 'done');
+  // Only items left for a person: an agent's own waiting is its business.
+  assert.equal(items.get('https://github.com/acme/web/pull/4@d')?.status, 'waiting');
+  assert.ok(!itemsByStatus(['human', 'failed']).some((i) => i.agent === 'dependabot' && i.key.endsWith('@a')));
+});
+
 test('a run stopped from the UI goes to the inbox instead of being retried', () => {
   const items = new Items('approver', false);
   items.stopped('pr-9', { url: 'u' });

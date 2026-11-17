@@ -129,9 +129,17 @@ export async function pollDependabot(): Promise<void> {
       log(`dependabot: listing ${repo} failed:`, (err as Error).message);
       continue;
     }
+    // A person's approval is a new key, so a PR parked for a human is assessed again once someone approves it.
+    const keyOf = (pr: DepPr) => `${pr.url}@${pr.headRefOid}${approvers(pr).length ? '+approved' : ''}`;
+    // Left for a person, then merged or closed, or replaced by a newer commit or an approval: out of the inbox.
+    // ponytail: only below the 50-PR list limit; past it, an open PR may just be unlisted.
+    if (prs.length < 50) {
+      const open = new Set(prs.map(keyOf));
+      const pulls = `https://github.com/${repo}/pull/`.toLowerCase();
+      items.closeGone((key) => key.toLowerCase().startsWith(pulls) && !open.has(key));
+    }
     await forEachLimit(prs, cfg.concurrency, async (pr) => {
-      // A person's approval is a new key, so a PR parked for a human is assessed again once someone approves it.
-      const key = `${pr.url}@${pr.headRefOid}${approvers(pr).length ? '+approved' : ''}`;
+      const key = keyOf(pr);
       if (!force && items.skip(key)) return;
       const gate = await precheck(repo, pr, cfg.cooldownDays, cfg.allowedUpdates);
       if (gate.wait) return; // cooldown or CI still running: look again on a later poll
