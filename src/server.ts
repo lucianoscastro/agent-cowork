@@ -6,7 +6,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { AGENTS, agentStatus, forceAgent } from './agents/status.ts';
 import { asset, type AssetSource, DEFAULTS_DIR } from './assets.ts';
 import { type AgentId, dbSecretName, DEFAULTS, envSecretName, PROVIDERS, type Project, type ProviderId, read, SECRETS, type SectionKey, parseTestVars, write } from './config.ts';
-import { brainDir, brainSlug, listNotes } from './brain.ts';
+import { brainDir, brainSlug, deleteNote, listNotes, looksSecret, putNote, validNotePath } from './brain.ts';
 import { safeEqual, signSession, verifySession } from './crypto.ts';
 import { databaseUrl, probeDatabase } from './databases.ts';
 import { audit, auditLog, deleteSecret, getSecret, Items, itemsByStatus, needsPerson, secretNames, setSecret } from './db.ts';
@@ -552,8 +552,43 @@ route('GET', '/api/brain/:slug', async (_c, [slug]) =>
 route('GET', '/api/brain/:slug/note', async ({ url }, [slug]) => {
   const dir = brainDir(brainProject(slug));
   const path = url.searchParams.get('path');
-  if (!(await listNotes(dir)).some((n) => n.path === path)) throw new HttpError(404, 'Unknown note');
-  return { path, text: await readFile(join(dir, path!), 'utf8') };
+  const note = (await listNotes(dir)).find((n) => n.path === path);
+  if (!note) throw new HttpError(404, 'Unknown note');
+  // hash: what the editor saw, so a save never overwrites a note that changed meanwhile.
+  return { path, text: await readFile(join(dir, note.path), 'utf8'), hash: note.hash };
+});
+const CHANGED = 'This note changed since you opened it: open it again to see what changed';
+/** The path of a note people may write: INDEX.md, or what agents may write too. */
+function notePath(path: unknown): string {
+  if (typeof path !== 'string' || (path !== 'INDEX.md' && !validNotePath(path))) {
+    throw new HttpError(400, 'The path must be lowercase folders and a file name with dashes, ending in .md, at most three levels deep, like database/rls.md');
+  }
+  return path;
+}
+route('PUT', '/api/brain/:slug/note', async ({ body, user }, [slug]) => {
+  const project = brainProject(slug);
+  const b = (await body()) as { path?: unknown; text?: unknown; hash?: unknown };
+  const path = notePath(b.path);
+  if (typeof b.text !== 'string' || !b.text.trim()) throw new HttpError(400, 'The note is empty');
+  if (b.text.length > 50_000) throw new HttpError(400, 'The note is too long');
+  if (looksSecret(b.text)) throw new HttpError(400, 'This looks like it holds a credential: name the setting or variable instead');
+  const seen = typeof b.hash === 'string' ? b.hash : undefined;
+  if (!(await putNote(brainDir(project), path, b.text, seen))) {
+    throw new HttpError(409, seen ? CHANGED : 'A note with this path already exists');
+  }
+  audit(user, seen ? 'brain.note.update' : 'brain.note.create', `${project}: ${path}`);
+  return { ok: true };
+});
+route('POST', '/api/brain/:slug/note/delete', async ({ body, user }, [slug]) => {
+  const project = brainProject(slug);
+  const b = (await body()) as { path?: unknown; hash?: unknown };
+  const path = notePath(b.path);
+  if (path === 'INDEX.md') throw new HttpError(400, 'The index cannot be deleted');
+  if (typeof b.hash !== 'string' || !(await deleteNote(brainDir(project), path, b.hash))) {
+    throw new HttpError(409, CHANGED);
+  }
+  audit(user, 'brain.note.delete', `${project}: ${path}`);
+  return { ok: true };
 });
 /** The whole vault as a .tar.gz, to open in Obsidian where the folder is not mounted. */
 route('GET', '/api/brain/:slug/download', ({ res }, [slug]) => {

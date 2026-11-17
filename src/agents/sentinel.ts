@@ -8,6 +8,7 @@ import { getSecret, Items } from '../db.ts';
 import { env } from '../env.ts';
 import { gh, ghJson } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
+import { brainContext, learning } from '../brain.ts';
 import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
 import { checkout, log, maskSecrets, REDACTED, removeCheckout, renderPrompt, withLock } from '../sh.ts';
@@ -188,21 +189,23 @@ export async function pollSentinel(): Promise<void> {
 export function runEnvironment(project: Project, title: string, dryRun: boolean): Promise<RunEnd> {
   const repos = Object.entries(project.environment!.repos).filter(([, t]) => t.e2e);
   const urls = repos.map(([, t]) => t.baseUrl);
-  return withRun({ agent: 'sentinel', item: project.name, url: urls[0], title, dryRun, timeoutMs: 6 * 60 * 60_000 }, async (run) => {
-    const outcomes: string[] = [];
-    const problems: string[] = [];
-    for (const [repo, target] of repos) {
-      const json = getSecret(envSecretName(project.name, repo));
-      const secrets = json ? parseTestVars(json) : {};
-      const end = await testRepo(run, project, repo, target, secrets, dryRun);
-      // A setup problem in one repository does not stop the others.
-      if (end.status === 'waiting') problems.push(`${repo}: ${end.summary}`);
-      else if (end.status !== 'done') return { ...end, summary: `${repo}: ${end.summary ?? end.status}` };
-      else outcomes.push(`${repo}: ${end.summary}`);
-    }
-    writeFileSync(join(run.logDir, 'sentinel-report.md'), [`# ${project.name}`, '', ...[...problems, ...outcomes].map((o) => `- ${o}`), ''].join('\n'));
-    return { status: problems.length ? 'waiting' : 'done', summary: [...problems, ...outcomes].join('\n').slice(0, 2000) };
-  });
+  return withRun({ agent: 'sentinel', item: project.name, url: urls[0], title, dryRun, timeoutMs: 6 * 60 * 60_000 }, (run) =>
+    learning(run, project.name, read('agents.sentinel'), dryRun, async (signals) => {
+      const outcomes: string[] = [];
+      const problems: string[] = [];
+      for (const [repo, target] of repos) {
+        const json = getSecret(envSecretName(project.name, repo));
+        const secrets = json ? parseTestVars(json) : {};
+        const end = await testRepo(run, project, repo, target, secrets, dryRun, signals);
+        // A setup problem in one repository does not stop the others.
+        if (end.status === 'waiting') problems.push(`${repo}: ${end.summary}`);
+        else if (end.status !== 'done') return { ...end, summary: `${repo}: ${end.summary ?? end.status}` };
+        else outcomes.push(`${repo}: ${end.summary}`);
+      }
+      writeFileSync(join(run.logDir, 'sentinel-report.md'), [`# ${project.name}`, '', ...[...problems, ...outcomes].map((o) => `- ${o}`), ''].join('\n'));
+      return { status: problems.length ? 'waiting' : 'done', summary: [...problems, ...outcomes].join('\n').slice(0, 2000) };
+    }),
+  );
 }
 
 type Context = {
@@ -220,10 +223,12 @@ type Context = {
   sha: string;
   vars: NodeJS.ProcessEnv;
   dryRun: boolean;
+  /** What the run teaches the project brain (nightly runs only). */
+  signals?: string[];
 };
 
 /** A repository's end-to-end suite: failures retried alone, reproduced in a browser, real bugs filed. */
-async function testRepo(run: Run, project: Project, repo: string, target: RepoEnvironment, secrets: Record<string, string>, dryRun: boolean): Promise<RunEnd> {
+async function testRepo(run: Run, project: Project, repo: string, target: RepoEnvironment, secrets: Record<string, string>, dryRun: boolean, signals: string[]): Promise<RunEnd> {
   const cfg = read('agents.sentinel');
   run.stage(`Detect: ${repo}`);
   const found = await resolveSuite(project, repo, target.branch);
@@ -234,7 +239,7 @@ async function testRepo(run: Run, project: Project, repo: string, target: RepoEn
     const why = found.branch ? `no end-to-end suite on ${found.branch}` : found.notes.join(' ');
     return { status: 'waiting', summary: `End-to-end tests are checked but did not run: ${why}. Fix the branch, or uncheck end-to-end tests in Projects → Test environment.` };
   }
-  const base = { run, project, baseUrl: target.baseUrl, name: hostOf(target.baseUrl), secrets, dryRun };
+  const base = { run, project, baseUrl: target.baseUrl, name: hostOf(target.baseUrl), secrets, dryRun, signals };
 
   const vars: NodeJS.ProcessEnv = { ...secrets, CI: 'true' };
   for (const name of suite.urlVars) vars[name] = target.baseUrl;
@@ -352,6 +357,7 @@ async function investigate(ctx: Context, test: TestResult): Promise<string> {
     retries: cfg.retries ? `It failed again in all ${cfg.retries} runs on its own.` : 'It was not run again on its own.',
     secrets: browser.secretNames.join(', ') || '(none)',
     language: outputLanguage(),
+    brain: await brainContext(ctx.project.name, undefined, `${test.title}\n${last.failedStep ?? ''}\n${last.error ?? ''}`.slice(0, 4000)),
   });
   let output: Reproduction;
   try {
@@ -362,6 +368,10 @@ async function investigate(ctx: Context, test: TestResult): Promise<string> {
   }
   const files = [...collectEvidence(ctx, label, browser.outDir), ...last.screenshots.slice(0, 3).map((s, i) => ({ name: `${slug(test.title)}-suite-${i + 1}.png`, type: s.type, data: Buffer.from(s.data, 'base64') }))];
   run.event('artifact', `"${test.title}": ${output.verdict} (${output.confidence})`, output);
+  // A confirmed problem of the environment or the test is a trap the next runs (and the Developer) should know.
+  if ((output.verdict === 'environment' || output.verdict === 'test_problem') && output.confidence === 'high') {
+    ctx.signals?.push(`An end-to-end test failed on ${ctx.name} and a browser reproduction found a ${output.verdict.replace('_', ' ')}, not an application bug.\nTest: ${test.title} (${test.file})\n${output.summary}\nEvidence: ${output.evidence.slice(0, 1500)}`);
+  }
   if (output.verdict !== 'bug' || output.confidence !== 'high') {
     return `"${test.title}": ${output.verdict.replace('_', ' ')} (${output.confidence}), not filed. ${output.summary}`;
   }
@@ -478,6 +488,7 @@ async function explore(ctx: Context, repo: string, changes: string): Promise<str
     minutes: String(cfg.exploreMinutes),
     secrets: browser.secretNames.join(', ') || '(none)',
     language: outputLanguage(),
+    brain: await brainContext(ctx.project.name, undefined, `${repo}\n${changes}`.slice(0, 4000)),
   });
   let output: Exploration;
   try {

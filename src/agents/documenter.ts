@@ -1,4 +1,5 @@
-import { outputLanguage, projectRepos, read } from '../config.ts';
+import { brainContext } from '../brain.ts';
+import { outputLanguage, projectOf, projectRepos, read } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { gh } from '../integrations/github.ts';
 import { notify } from '../notify.ts';
@@ -47,7 +48,7 @@ export async function pollDocumenter(): Promise<void> {
   const due: { repo: string; base: string; sha: string; since?: string }[] = [];
   for (const { repo } of projectRepos()) {
     try {
-      const project = read('projects').items.find((p) => Object.values(p.repos).some((r) => r.repo === repo));
+      const project = projectOf(repo);
       const base = project?.baseBranch || (await gh(['repo', 'view', repo, '--json', 'defaultBranchRef', '-q', '.defaultBranchRef.name']));
       const sha = await gh(['api', `repos/${repo}/commits/${encodeURIComponent(base)}`, '-q', '.sha']);
       const last = items.get(repo);
@@ -92,7 +93,9 @@ async function document(run: Run, { repo, base, sha, since }: { repo: string; ba
       : `Mode: **full**. Write the whole structure${exists ? `, reusing what is already in \`${folder}/\`` : ''}.`;
 
     run.stage('Document');
-    const prompt = await renderPrompt('documenter/document', { repo, base, sha: sha.slice(0, 12), folder, mode, language: outputLanguage() });
+    const project = projectOf(repo);
+    const brain = project ? await brainContext(project.name, undefined, `${repo} architecture business rules flows decisions conventions`) : '';
+    const prompt = await renderPrompt('documenter/document', { repo, base, sha: sha.slice(0, 12), folder, mode, language: outputLanguage(), brain });
     const { output } = await runProvider<Output>(cfg.provider, { run, label: 'document', prompt, schema: SCHEMA, cwd, mode: 'write', model: cfg.model });
 
     run.stage('Check');

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type AuditCategory, AUDIT_CATEGORIES, outputLanguage, type ProjectRepo, read } from '../config.ts';
+import { brainContext } from '../brain.ts';
+import { type AuditCategory, AUDIT_CATEGORIES, outputLanguage, projectOf, type ProjectRepo, read } from '../config.ts';
 import { Items } from '../db.ts';
 import { env } from '../env.ts';
 import { gh } from '../integrations/github.ts';
@@ -188,7 +189,9 @@ export async function scan(items: Items, { repo, base, sha, category }: Target, 
     try {
       const extra = category === 'dependencies' ? (run.stage('Gather'), await dependencyData(run, work.dir)) : '';
       run.stage('Audit');
-      const prompt = await renderPrompt('auditor/audit', { repo, base, sha: sha.slice(0, 12), language: outputLanguage(), category: name, skill, focus, extra });
+      const project = projectOf(repo);
+      const brain = project ? await brainContext(project.name, undefined, `${repo} ${name} ${focus}`) : '';
+      const prompt = await renderPrompt('auditor/audit', { repo, base, sha: sha.slice(0, 12), language: outputLanguage(), category: name, skill, focus, extra, brain });
       const { output } = await runProvider<Audit>(choice.provider, { run, label: 'audit', prompt, schema: AUDIT_SCHEMA, cwd: work.dir, mode: 'read-only', model: choice.model });
       writeFileSync(join(run.logDir, 'report.md'), renderReport(category, repo, base, sha, output));
       writeFileSync(join(run.logDir, 'audit.json'), JSON.stringify({ repo, base, sha, category, audit: output }));

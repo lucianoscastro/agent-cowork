@@ -246,6 +246,9 @@ export function projectRepos(): ProjectRepo[] {
   return [...new Map(all.map((r) => [r.repo, r])).values()];
 }
 
+/** The first project that lists a repository: whose brain a run on that repository reads and teaches. */
+export const projectOf = (repo: string): Project | undefined => read('projects').items.find((p) => Object.values(p.repos).some((r) => r.repo === repo));
+
 /** What the platform runs to verify a repository: its own commands, or its stack's defaults. */
 export const verifyCommands = (r: ProjectRepo): string[] => (r.verify?.length ? r.verify : read('stacks')[r.stack]);
 

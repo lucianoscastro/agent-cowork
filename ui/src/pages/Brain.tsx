@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react';
+import { api } from '../api';
 import { useT } from '../i18n';
-import { Badge, Button, Empty, Field, Loading, PageHeader, Select, useFetch } from '../ui';
+import { Badge, Button, Empty, Field, Loading, Message, PageHeader, Select, Text, useAction, useFetch, useUnsaved } from '../ui';
 
 type Vault = { project: string; slug: string; dir: string; notes: number };
 type NoteInfo = { path: string; title: string; tags: string[]; repos: string[]; updated: string; links: string[] };
+type NoteFile = { path: string; text: string; hash: string };
+/** A note being written: `hash` is the saved note's when editing one (none for a new note). */
+type Draft = { slug: string; path: string; text: string; hash?: string; original: string };
+
+const template = () => `---\ntags: []\nrepos: []\nupdated: ${new Date().toISOString().slice(0, 10)}\n---\n# \n\n`;
 
 /**
- * Each project's brain: the notes agents learned and read before working. Read-only here; people edit the
- * notes in Obsidian (the vault is a folder of Markdown files) or download the whole vault.
+ * Each project's brain: the notes agents learned and read before working. People add, edit and delete notes
+ * here, or in Obsidian (the vault is a folder of Markdown files), or download the whole vault.
  */
 export function Brain() {
   const t = useT();
@@ -15,16 +21,54 @@ export function Brain() {
   const [picked, setPicked] = useState<string>();
   const [note, setNote] = useState<string>();
   const [graph, setGraph] = useState(false);
+  const [draft, setDraft] = useState<Draft>();
+  const save = useAction();
+  const remove = useAction();
+  // A new note's path counts too: typed and lost on leaving otherwise.
+  const typed = draft && [draft.path, draft.text];
+  const saved = draft && [draft.hash ? draft.path : '', draft.original];
+  useUnsaved(typed, saved);
   const vault = vaults?.find((v) => v.slug === picked) ?? vaults?.[0];
-  const { data: notes } = useFetch<NoteInfo[]>(vault ? `/brain/${vault.slug}` : null);
+  const { data: notes, reload: reloadNotes } = useFetch<NoteInfo[]>(vault ? `/brain/${vault.slug}` : null);
   const selected = notes?.find((n) => n.path === note)?.path ?? notes?.find((n) => n.path === 'INDEX.md')?.path ?? notes?.[0]?.path;
-  const { data: file } = useFetch<{ path: string; text: string }>(vault && selected ? `/brain/${vault.slug}/note?path=${encodeURIComponent(selected)}` : null);
+  const { data: file, reload: reloadFile } = useFetch<NoteFile>(vault && selected ? `/brain/${vault.slug}/note?path=${encodeURIComponent(selected)}` : null);
   if (!vaults) return <Loading error={error} retry={reload} />;
+
+  const start = (next: Draft) => (save.setMessage(undefined), setGraph(false), setDraft(next));
+  // Always the note as saved now: a run may have learned since the page loaded it.
+  const edit = async (slug: string, path: string) => {
+    try {
+      const f = await api<NoteFile>(`/brain/${slug}/note?path=${encodeURIComponent(path)}`);
+      start({ slug, path: f.path, text: f.text, hash: f.hash, original: f.text });
+    } catch (err) {
+      remove.setMessage({ tone: 'bad', text: (err as Error).message });
+    }
+  };
+  const cancel = () => {
+    if (JSON.stringify(typed) !== JSON.stringify(saved) && !window.confirm(t('Discard your changes to this note?'))) return;
+    setDraft(undefined);
+    void reloadFile();
+  };
+  const saveDraft = (d: Draft) =>
+    save.run(async () => {
+      await api(`/brain/${d.slug}/note`, { method: 'PUT', body: { path: d.path, text: d.text, hash: d.hash } });
+      setDraft(undefined);
+      setNote(d.path);
+      await Promise.all([reload(), reloadNotes(), reloadFile()]);
+    });
+  const deleteNote = (slug: string, f: NoteFile) =>
+    window.confirm(t('Delete the note {path}? Agents stop reading it, and this cannot be undone.', { path: f.path })) &&
+    remove.run(async () => {
+      await api(`/brain/${slug}/note/delete`, { method: 'POST', body: { path: f.path, hash: f.hash } });
+      setNote(undefined);
+      await Promise.all([reload(), reloadNotes()]);
+    }, 'Deleted').then((ok) => void (ok || reloadFile()));
 
   return (
     <>
       <PageHeader title="Brain">
-        {vault && vault.notes > 0 && (
+        {vault && !draft && <Button onClick={() => start({ slug: vault.slug, path: '', text: template(), original: template() })}>New note</Button>}
+        {vault && vault.notes > 0 && !draft && (
           <Button onClick={() => setGraph(!graph)} aria-pressed={graph}>
             {graph ? 'Notes' : 'Graph'}
           </Button>
@@ -37,17 +81,38 @@ export function Brain() {
       </PageHeader>
       <p className="muted">
         {t('What the agents learned on each project: one Markdown note per lesson, read by every run of the project before it starts.')}{' '}
-        {t('Edit or delete notes in Obsidian: mount this folder on the host and open it as a vault:')} <code>{vault?.dir ?? '/data/brain'}</code>
+        {t('Add, edit or delete notes here, or in Obsidian: mount this folder on the host and open it as a vault:')} <code>{vault?.dir ?? '/data/brain'}</code>
       </p>
       {!vaults.length ? (
         <Empty>No project yet: add one in Projects.</Empty>
+      ) : draft ? (
+        <section className="card">
+          <header className="card-head">
+            <h2>{draft.hash ? <code>{draft.path}</code> : t('New note')}</h2>
+          </header>
+          {!draft.hash && (
+            <Field label="Path" hint="Lowercase folders and a file name with dashes, ending in .md, like database/rls.md.">
+              <Text value={draft.path} onChange={(path) => setDraft({ ...draft, path: path.trim().toLowerCase() })} placeholder="database/rls.md" />
+            </Field>
+          )}
+          <Field label="Note" hint="Markdown with the front matter Obsidian reads (tags, repos). Every agent of the project reads it as data: never write a password, token or connection string here.">
+            <textarea rows={22} value={draft.text} onChange={(e) => setDraft({ ...draft, text: e.target.value })} spellCheck={false} />
+          </Field>
+          <div className="row">
+            <Button variant="primary" busy={save.busy} disabled={!draft.path || !draft.text.trim()} onClick={() => void saveDraft(draft)}>
+              Save
+            </Button>
+            <Button onClick={cancel}>Cancel</Button>
+            <Message message={save.message} />
+          </div>
+        </section>
       ) : (
         <>
           <Field label="Project">
             <Select value={vault!.slug} onChange={(v) => (setPicked(v), setNote(undefined))} options={vaults.map((v) => ({ value: v.slug, label: `${v.project} (${v.notes})` }))} />
           </Field>
           {!notes?.length ? (
-            <Empty>Nothing learned yet: notes appear after runs where people answered or reviewed, or a review finding or a failing build was fixed.</Empty>
+            <Empty>Nothing learned yet: notes appear after runs where people answered or reviewed, or a review finding or a failing build was fixed. You can also add one with New note.</Empty>
           ) : graph ? (
             <section className="card">
               <p className="hint">{t('Each note and the notes it links to with [[…]]. Click a note to read it.')}</p>
@@ -76,7 +141,18 @@ export function Brain() {
                   <h2>
                     <code>{selected}</code>
                   </h2>
+                  {file && file.path === selected && (
+                    <div className="row">
+                      <Button onClick={() => void edit(vault!.slug, file.path)}>Edit</Button>
+                      {file.path !== 'INDEX.md' && (
+                        <Button variant="danger" busy={remove.busy} onClick={() => void deleteNote(vault!.slug, file)}>
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </header>
+                <Message message={remove.message} />
                 {file && file.path === selected ? <pre className="log">{file.text}</pre> : <p className="muted">{t('Loading…')}</p>}
               </section>
             </div>

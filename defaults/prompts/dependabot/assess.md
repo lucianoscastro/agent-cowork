@@ -18,12 +18,15 @@ Assess Dependabot pull request {{url}} ("{{title}}"): do the updates below carry
 {{body}}
 </pr_description>
 
+{{brain}}
+
 ## Operations
 
 1. Run `git diff origin/{{base}}...HEAD`. Confirm that only dependency manifests and lockfiles changed (plus the fix described above, if any), and that only the listed packages (plus their own transitive dependencies) moved.
 2. Read the release notes and changelog in the description for breaking changes, deprecations, changed defaults, security notes, or a changed license.
 3. Search the codebase for how each listed package is used, and check whether any change in its release notes affects that usage. In a group, also check that packages meant to move together (a library and its plugins, a framework's packages) end on matching versions.
-4. Look for supply-chain warning signs: a new maintainer or publisher, an install script added, a sudden large dependency tree, or a version that skips or replaces a yanked release.
+4. When the project brain records something about these packages (a version pinned on purpose, an update that broke before, a plugin that must move with it), check whether it applies to this update.
+5. Look for supply-chain warning signs: a new maintainer or publisher, an install script added, a sudden large dependency tree, or a version that skips or replaces a yanked release.
 
 ## Plan B
 

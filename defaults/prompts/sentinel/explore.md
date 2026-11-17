@@ -13,6 +13,8 @@ What changed since the last exploration:
 - The browser records the network (HAR) and keeps your screenshots (give each a descriptive file name). Close the browser with the browser close tool when you finish: that is what saves the network recording. Take a screenshot whenever something goes wrong.
 - This is a test environment shared with other people.
 
+{{brain}}
+
 ## Operations
 
 1. Read the commits, the cards they name and the changed files. Decide what a user could notice: up to three areas, most user-visible first. If nothing could be seen by a user (only docs, CI, tests, tooling), say so in `summary`, return no anomalies and do not open the browser.

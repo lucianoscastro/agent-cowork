@@ -21,9 +21,11 @@ An end-to-end test of project {{project}} fails on environment {{environment}}. 
 - You may read the rest of the suite (step definitions, page objects, fixtures, helpers) to learn what each step really does.
 - The browser records the network (HAR) and keeps your screenshots (give each a descriptive file name). Close the browser with the browser close tool when you finish: that is what saves the network recording. Take a screenshot at the moment the problem shows.
 
+{{brain}}
+
 ## Operations
 
-1. Read the test and the suite code it uses.
+1. Read the test and the suite code it uses. Check the project brain above for a known trap of this environment or its test data that could explain the failure; still confirm it in the browser.
 2. Replay the test in the browser, step by step, with the same user and data.
 3. At the failing step, compare what the application shows with what the test expects. Check the console and the failed network requests.
 4. Take a screenshot of the problem.

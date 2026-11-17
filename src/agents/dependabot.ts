@@ -1,4 +1,5 @@
-import { outputLanguage, projectRepos, read } from '../config.ts';
+import { brainContext } from '../brain.ts';
+import { outputLanguage, projectOf, projectRepos, read } from '../config.ts';
 import { Items, sql } from '../db.ts';
 import { actionsLinks, failedLogTail, gh, ghJson } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
@@ -231,6 +232,7 @@ async function handle(run: Run, repo: string, pr: DepPr, gate: Gate, dryRun: boo
     if (failure) return toHuman(`Verification failed:\n${failure}`);
 
     run.stage('Assess');
+    const project = projectOf(repo);
     const prompt = await renderPrompt('dependabot/assess', {
       url: pr.url,
       title: pr.title,
@@ -245,6 +247,7 @@ async function handle(run: Run, repo: string, pr: DepPr, gate: Gate, dryRun: boo
         ? `- ${approvers(pr).join(', ')} approved this PR on GitHub, accepting its ${worst} update. Breaking changes in the release notes are expected: report one as a risk only when it affects how this repository uses the package.`
         : '',
       language: outputLanguage(),
+      brain: project ? await brainContext(project.name, undefined, `${pr.title}\n${bumps.map((b) => b.pkg).join(' ')}`) : '',
     });
     const { output } = await runProvider<Assessment>(cfg.provider, {
       run,

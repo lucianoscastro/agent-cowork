@@ -44,7 +44,7 @@ flowchart LR
   end
 ```
 
-Each project also has a **brain**: an Obsidian-compatible vault of lessons the agents learned (environments, databases, conventions, decisions). Every run reads it first; runs where people answered or reviewed, or a finding or failing build was fixed, add to it.
+Each project also has a **brain**: an Obsidian-compatible vault of lessons the agents learned (environments, databases, conventions, decisions). Every agent reads it before working. Runs add to it when people answered or reviewed, a finding or failing build was fixed, a PR was closed or corrected by people before its merge, an author answered the Approver's findings, or the Sentinel traced a failing test to the environment. People add, edit and delete notes in **Work → Brain**.
 
 A project can also list **databases** (SQL Server, PostgreSQL or MongoDB), each read-only or write. The developer agent and its reviewers query them through tools the platform serves (`db_list`, `db_schema`, `db_query`), and the steps that change code can validate a migration with `db_validate`: it runs twice in one transaction (the second run proves it is idempotent) that is always rolled back. A database change itself always ships as an idempotent script in a pull request. Each database is filled in field by field (engine, host, port, database, user, options); only the password is a secret, stored encrypted, and no model sees it or the URL the platform builds from them; results and errors are masked for it. Claude Code and Codex get the tools; Antigravity does not yet (its CLI only reads MCP servers from a global file).
 

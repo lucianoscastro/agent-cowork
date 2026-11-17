@@ -10,7 +10,7 @@ import { BOT_MARK } from '../integrations/jira.ts';
 import { brainContext, learning } from '../brain.ts';
 import { runProvider } from '../providers/index.ts';
 import { withRun, type Run, type RunEnd } from '../runs.ts';
-import { checkout, log, removeCheckout, renderPrompt, run as sh } from '../sh.ts';
+import { checkout, log, removeCheckout, renderPrompt, run as sh, untrusted } from '../sh.ts';
 import { BUILD_SCHEMA, type Built, describeRepo, NeedsInput, type RepoCheckout, verifyWithFixes } from './developer.ts';
 
 /** A PR the developer opened and follows until it is merged or closed. */
@@ -136,6 +136,8 @@ export async function followUpTasks(items: Items, projects: Project[], dryRun: b
         }
         items.done(item.key, { ...item.data, closed: snaps.map((s, i) => `${prs[i].url}: ${s.state.toLowerCase()}`) });
         log(`developer: ${item.key} PRs ${merged ? 'merged' : 'closed'}, card done`);
+        // How the PRs ended teaches too: why one was rejected, and what people corrected before merging.
+        if (project && !dryRun) tasks.push({ project, run: () => learnFromOutcome(item, project, prs, snaps) });
         continue;
       }
       const open = prs.map((pr, i) => ({ pr, snap: snaps[i] })).filter(({ snap }) => snap.state === 'OPEN');
@@ -196,6 +198,67 @@ async function followUp(
     parked,
     reason: end.status === 'killed' ? 'Stopped from the UI. Retry resumes following the PR.' : parked ? end.summary : undefined,
   });
+}
+
+type PrCommit = { sha: string; parents: unknown[]; commit: { message: string; author: { name: string; email: string } } };
+
+/** Commits people pushed on the agent's branch: not the agent's or a bot's, and not merges that brought the base in. Exported for tests. */
+export const peopleCommits = (commits: PrCommit[], agentEmail: string) =>
+  commits.filter((c) => c.parents.length === 1 && c.commit.author.email !== agentEmail && !c.commit.author.email.includes('[bot]'));
+
+/**
+ * What people wrote on a PR after the agent last followed it up: comments and review bodies newer than the
+ * last handled, and in each review thread what came after the last comment the agent handled. Exported for tests.
+ */
+export function saidSince(s: PrSnapshot, handledUntil: string, handledNotes: number[]): string[] {
+  const person = (n: Note) => n.author?.__typename === 'User' && !ours(n) && n.body.trim() !== '' && n.createdAt > handledUntil;
+  return [
+    ...s.comments.filter(person).map((n) => `- ${n.author!.login}: ${untrusted(n.body.slice(0, 1500))}`),
+    ...s.threads.flatMap((t) => {
+      const nodes = t.comments.nodes;
+      const handled = nodes.findLastIndex((n) => handledNotes.includes(n.databaseId));
+      return nodes.slice(handled + 1).filter(person).map((n) => `- ${n.author!.login} on ${t.path}${t.line ? `:${t.line}` : ''}: ${untrusted(n.body.slice(0, 1500))}`);
+    }),
+  ];
+}
+
+/**
+ * Learns from how a card's PRs ended, as its own run, only when there is a lesson: a PR closed without a merge
+ * where people said why, people's own commits on the agent's branch before the merge (the exact correction),
+ * or what people wrote after the last follow-up. A plain merge teaches nothing.
+ * ponytail: the first 100 commits of a PR, and the diffs of 5 of them; the lessons are in the first ones.
+ */
+async function learnFromOutcome(item: Item, project: Project, prs: WatchedPr[], snaps: PrSnapshot[]): Promise<void> {
+  const cfg = read('agents.developer');
+  const handledUntil = String(item.data.handledUntil ?? '');
+  const handledNotes = (item.data.handledNotes ?? []) as number[];
+  try {
+    const signals: string[] = [];
+    for (const [i, pr] of prs.entries()) {
+      const snap = snaps[i];
+      const said = saidSince(snap, handledUntil, handledNotes);
+      if (snap.state === 'CLOSED' && said.length) signals.push(`${pr.url} was closed without being merged. What people wrote:\n${said.join('\n')}`);
+      if (snap.state !== 'MERGED') continue;
+      if (said.length) signals.push(`People wrote on ${pr.url} before it was merged:\n${said.join('\n')}`);
+      const commits = peopleCommits(await ghJson<PrCommit[]>(['api', `repos/${pr.repo}/pulls/${pr.number}/commits?per_page=100`]), process.env.GIT_AUTHOR_EMAIL ?? '');
+      const changes: string[] = [];
+      for (const c of commits.slice(0, 5)) {
+        const diff = await gh(['api', '-H', 'Accept: application/vnd.github.diff', `repos/${pr.repo}/commits/${c.sha}`]);
+        changes.push(`- ${c.commit.author.name}: ${c.commit.message.split('\n')[0]}\n\`\`\`diff\n${diff.slice(0, 4000)}\n\`\`\``);
+      }
+      if (changes.length) signals.push(`People corrected the agent's work on ${pr.url} with their own commits before merging it:\n${changes.join('\n')}`);
+    }
+    if (!signals.length) return;
+    const states = snaps.map((s, i) => `${prs[i].url} ${s.state.toLowerCase()}`).join(', ');
+    await withRun({ agent: 'developer', item: item.key, url: prs[0].url, title: `${project.name} · PR outcome`, dryRun: false }, (run) =>
+      learning(run, project.name, cfg.lead, false, async (collected) => {
+        collected.push(...signals);
+        return { status: 'done', summary: `Learned from how the pull requests ended: ${states}` };
+      }),
+    );
+  } catch (err) {
+    log(`developer: learning from the PRs of ${item.key} failed:`, (err as Error).message);
+  }
 }
 
 /** Too many red rounds: says so on each PR and waits for a person. */

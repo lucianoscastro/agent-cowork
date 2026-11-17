@@ -11,6 +11,8 @@ Run a {{category}} audit of repository {{repo}}, branch `{{base}}` at commit `{{
 
 {{extra}}
 
+{{brain}}
+
 ## Operations
 
 1. Detect the stack from real files: manifests and lockfiles, entry points, routes, data access, configuration, frontend, deploy and CI.
@@ -18,6 +20,7 @@ Run a {{category}} audit of repository {{repo}}, branch `{{base}}` at commit `{{
 3. Review every check in the skill's catalog, and give each one a status: `fail` (the skill's FAIL), `attention` (ATTENTION), `ok`, `na` (N/A) or `out_of_scope` (OUT_OF_SCOPE).
 4. Confirm every finding in the current files, with the exact file and line.
 5. Record verified good practices as strengths, and everything you could not verify as limitations.
+6. When the project brain records a decision about something you find (an accepted risk, a convention), still report what the code shows, and cite the note in the finding.
 
 ## Plan B
 
