@@ -132,7 +132,7 @@ export type Settings = {
     bugIssueType: string;
   };
   // A card with `label` gets its spec documents (spec, design, ADRs, tasks) as Markdown attachments, then goes
-  // straight to the Developer: the label is swapped for the Developer's.
+  // to the Developer, straight away or once a person approves it on the card: the label is swapped for the Developer's.
   'agents.pm': Shadow & {
     enabled: boolean;
     label: string;
@@ -142,6 +142,8 @@ export type Settings = {
     secondReviewer: Reviewer;
     // One Jira sub-task per task of tasks.md, moved by the Developer as it builds each one.
     subtasks: boolean;
+    // A person approves the documents on the card (a comment "approved") before the card goes to the Developer.
+    approval: boolean;
     limits: { specReview: number; runMinutes: number };
     concurrency: number;
   };
@@ -239,6 +241,7 @@ export const DEFAULTS: Settings = {
     reviewer: { enabled: true, provider: 'codex', model: '' },
     secondReviewer: { enabled: false, provider: 'agy', model: '' },
     subtasks: true,
+    approval: false,
     limits: { specReview: 2, runMinutes: 60 },
     concurrency: 1,
   },
@@ -585,6 +588,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           reviewer: reviewer(o.reviewer, `${key}.reviewer`),
           secondReviewer: reviewer(o.secondReviewer, `${key}.secondReviewer`),
           subtasks: bool(o, 'subtasks', key),
+          approval: bool(o, 'approval', key),
           limits: { specReview: int(limits, 'specReview', `${key}.limits`, 0, 10), runMinutes: int(limits, 'runMinutes', `${key}.limits`, 5, 600) },
           concurrency: int(o, 'concurrency', key, 1, 4),
         };

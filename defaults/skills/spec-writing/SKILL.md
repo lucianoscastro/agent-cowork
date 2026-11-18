@@ -22,7 +22,7 @@ The common failure starts here: a requirement that never became an obligation. A
 
 - **Read only**: every checkout of the project's repositories. Read the code; never change it, and run no builds, installs or tests.
 - **Only the documents.** Write them in the work folder the run's prompt names (`spec/`), or return them in your answer when the prompt says the platform saves them. No code, config or other docs.
-- **No commits, pushes, pull requests or card changes.** The platform attaches the folder's files to the card and hands the card to the Developer. There is no approval step, so write no approval lines: the people reviewing the code check it against these documents.
+- **No commits, pushes, pull requests or card changes.** The platform attaches the folder's files to the card and hands the card to the Developer. When a project wants a person to approve the documents first, that happens on the card, outside them, so write no approval lines: the people reviewing the code check it against these documents.
 - **Nobody answers during the run.** Never wait for an answer and never write on a guess. Gray areas go back as questions ([references/questions.md](references/questions.md)): the platform posts them in one batch, people answer, and the next run continues from the answers.
 
 ## Layout

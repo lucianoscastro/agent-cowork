@@ -37,7 +37,8 @@ const readyLabel = () => jira.triggerLabel(read('agents.developer').triggerJql) 
 
 /**
  * Agent G: a card with the trigger label gets its spec documents (spec, design, ADRs, tasks) as Markdown
- * attachments, then goes straight to the Developer. Gray areas are asked on the card first, in one batch.
+ * attachments, then goes to the Developer: straight away, or once a person approves it on the card (`approval`).
+ * Gray areas are asked on the card first, in one batch.
  */
 export async function pollPm(): Promise<void> {
   const cfg = read('agents.pm');
@@ -83,19 +84,37 @@ async function handle(items: Items, key: string, project: Project, dryRun: boole
   const cfg = read('agents.pm');
   // url and title: the Inbox links the card, where the answer goes.
   const data = { project: project.name, url: jira.browseUrl(key), title: key };
+  // A card waiting for a person to approve its documents: what they wrote since decides the run. A run that fails or
+  // is stopped meanwhile keeps the wait, so its retry reads the same comments instead of writing another version.
+  const item = items.get(key);
+  const approvalSince = item && item.status !== 'done' && item.data.approval ? String(item.data.waitingSince) : undefined;
+  const kept = approvalSince ? { ...data, approval: true, waitingSince: approvalSince } : data;
   const end = await withRun(
     { agent: 'pm', item: key, url: data.url, title: project.name, dryRun, timeoutMs: cfg.limits.runMinutes * 60_000 },
-    (run) => learning(run, project.name, cfg.lead, dryRun, (signals) => specify(run, key, project, dryRun, signals)),
+    (run) => learning(run, project.name, cfg.lead, dryRun, (signals) => specify(run, key, project, dryRun, signals, approvalSince)),
   );
   if (end.status === 'done') items.done(key, { summary: end.summary });
-  else if (end.status === 'waiting') items.wait(key, { ...data, reason: end.summary, waitingSince: end.data?.waitingSince ?? new Date().toISOString() });
-  else if (end.status === 'killed') items.stopped(key, data);
-  else items.fail(key, end.summary ?? end.status, data);
+  else if (end.status === 'waiting') items.wait(key, { ...data, reason: end.summary, waitingSince: end.data?.waitingSince ?? new Date().toISOString(), approval: end.data?.approval === true });
+  else if (end.status === 'killed') items.stopped(key, kept);
+  else items.fail(key, end.summary ?? end.status, kept);
 }
 
-async function specify(run: Run, key: string, project: Project, dryRun: boolean, signals: string[]): Promise<RunEnd> {
+async function specify(run: Run, key: string, project: Project, dryRun: boolean, signals: string[], approvalSince?: string): Promise<RunEnd> {
   const cfg = read('agents.pm');
   const issue = await jira.getIssue(key);
+  if (approvalSince) {
+    const verdict = approvalOf(issue.fields.comment.comments, approvalSince);
+    // Put back in the queue with nothing new on the card (Retry, a restart): it keeps waiting.
+    if (!verdict) return { status: 'waiting', summary: `Waiting for a person to approve the spec on ${key}`, data: { waitingSince: approvalSince, approval: true } };
+    if (verdict === 'approved') {
+      run.stage('Hand-off');
+      // The label first: a retry after a Jira error never posts the note twice, and a lost note only warns.
+      await handOff(key);
+      await jira.comment(key, `${BOT_MARK} Spec approved. Handed to the Developer (label ${readyLabel()}). To change the spec, comment what to change and put the label ${cfg.label} back.`).catch((err) => run.event('warn', 'The approval note was not posted', (err as Error).message));
+      return { status: 'done', summary: `the spec of ${key} was approved on the card and handed to the Developer` };
+    }
+    // Anything else people wrote asks for changes: a new version follows, and asks for approval again.
+  }
   const people = issue.fields.comment.comments.filter((c) => !jira.adfToText(c.body).trimStart().startsWith(BOT_MARK));
   if (people.length) signals.push(`People wrote on card ${key}:\n${jira.formatComments(people).slice(-6000)}`);
 
@@ -124,7 +143,7 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
       repos: checkouts.join('\n'),
       folder: SPEC,
       mode: before.has('spec.md')
-        ? `Mode: **new version**. The card's documents are in \`${SPEC}/\` (${attached.join(', ')}), and the card came back for a new version (put back by people, or by the Developer with what does not hold): update them from the card's latest discussion and keep what still holds.`
+        ? `Mode: **new version**. The card's documents are in \`${SPEC}/\` (${attached.join(', ')}), and the card came back for a new version (people asked for changes on the card or put it back, or the Developer found what does not hold): update them from the card's latest discussion and keep what still holds.`
         : `Mode: **new**.${attached.length ? ` \`${SPEC}/\` holds the card's Markdown attachments (${attached.join(', ')}): read them as part of the card.` : ''}`,
       reviewContext: '',
       brain: await brainContext(project.name, workspace, `${issue.fields.summary}\n${description}`),
@@ -198,14 +217,17 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     const ready = readyLabel();
     const notes = findings.length ? `\n\n${passed ? 'Reviewer notes' : 'Reviewer findings still open'}:\n${formatFindings(findings)}` : '';
     const tasks = fromSpec(after, parseTasks);
-    if (dryRun) return { status: 'done', summary: `would attach ${changed ? docs.join(', ') : 'nothing (unchanged)'} to ${key}${cfg.subtasks && tasks.length ? `, keep a sub-task for each of its ${tasks.length} tasks` : ''} and hand it to the Developer: ${spec.title}\n\n${spec.summary}${notes}` };
+    if (dryRun) return { status: 'done', summary: `would attach ${changed ? docs.join(', ') : 'nothing (unchanged)'} to ${key}${cfg.subtasks && tasks.length ? `, keep a sub-task for each of its ${tasks.length} tasks` : ''} and ${cfg.approval ? 'wait for a person to approve it on the card before handing it' : 'hand it'} to the Developer: ${spec.title}\n\n${spec.summary}${notes}` };
     if (changed) await jira.attach(key, [...after].map(([name, text]) => ({ name, type: 'text/markdown', data: Buffer.from(text) })));
     // The sub-tasks only mirror the tasks: the hand-off goes on without them when Jira refuses.
     if (cfg.subtasks) await syncSubtasks(run, key, tasks).catch((err) => run.event('warn', 'The sub-tasks were not updated', (err as Error).message));
-    await jira.comment(key, `${BOT_MARK} Spec documents ${changed ? 'attached' : 'unchanged'}: ${docs.join(', ')}\n\n${spec.summary}${notes}\n\nHanded to the Developer (label ${ready}). To change the spec, comment what to change and put the label ${cfg.label} back.`);
-    await jira.relabel(key, [cfg.label], [ready]);
-    // Straight to the Developer: its next poll starts now instead of after the interval.
-    wake('developer');
+    const attachedNote = `${BOT_MARK} Spec documents ${changed ? 'attached' : 'unchanged'}: ${docs.join(', ')}\n\n${spec.summary}${notes}`;
+    if (cfg.approval) {
+      const { created } = await jira.comment(key, `${attachedNote}\n\nWaiting for approval: reply with only "approved" (or "aprovado", "aprobado") to hand the card to the Developer, or comment what to change and a new version follows.`);
+      return { status: 'waiting', summary: `Waiting for a person to approve ${docs.join(', ')} on ${key}: ${spec.title}`, data: { waitingSince: created, approval: true } };
+    }
+    await jira.comment(key, `${attachedNote}\n\nHanded to the Developer (label ${ready}). To change the spec, comment what to change and put the label ${cfg.label} back.`);
+    await handOff(key);
     return { status: 'done', summary: `${changed ? 'attached' : 'kept'} ${docs.join(', ')} on ${key} and handed it to the Developer: ${spec.title}` };
   } finally {
     for (const r of repos) await removeCheckout(r).catch(() => {});
@@ -289,6 +311,27 @@ async function syncSubtasks(run: Run, key: string, tasks: Task[]): Promise<void>
   if (created.length || rename.length || close.length) {
     run.event('artifact', 'Sub-tasks', [created.length && `created ${created.join(', ')}`, rename.length && `renamed ${rename.map((r) => r.key).join(', ')}`, close.length && `closed ${close.join(', ')}`].filter(Boolean).join('; '));
   }
+}
+
+/** Swaps the trigger label for the Developer's and wakes it: its next poll starts now instead of after the interval. */
+async function handOff(key: string): Promise<void> {
+  await jira.relabel(key, [read('agents.pm').label], [readyLabel()]);
+  wake('developer');
+}
+
+// ponytail: an exact word, never a reading of free text; "approved, but…" asks for changes, and costs one more version.
+const APPROVAL = /^(approved?|aprovad[oa]|aprovo|aprobad[oa]|apruebo|lgtm)$/;
+
+/**
+ * What people wrote on the card since its documents were posted for approval: "approved" when every comment is only an
+ * approval word (case, punctuation and emoji aside), "changes" when any other comment asks for something, nothing when
+ * nobody wrote. A change request is never dropped for a later approval. Exported for tests.
+ */
+export function approvalOf(comments: jira.Comment[], since: string): 'approved' | 'changes' | undefined {
+  const texts = comments.filter((c) => Date.parse(c.created) > Date.parse(since)).map((c) => jira.adfToText(c.body).trim()).filter((t) => !t.startsWith(BOT_MARK));
+  if (!texts.length) return undefined;
+  // Punctuation, spaces and emoji around the word go; a digit stays, so "approved 2" is not an approval.
+  return texts.every((t) => APPROVAL.test(t.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))) ? 'approved' : 'changes';
 }
 
 /** Posts the questions on the card and ends the run waiting for an answer there. */

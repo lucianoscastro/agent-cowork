@@ -162,7 +162,7 @@ export type Sections = {
     exploreEveryHours: number;
     bugIssueType: string;
   };
-  /** A card with `label` gets its spec documents as attachments, then goes straight to the Developer. */
+  /** A card with `label` gets its spec documents as attachments, then goes to the Developer (after a person approves them, with `approval`). */
   'agents.pm': Shadow & {
     enabled: boolean;
     label: string;
@@ -170,6 +170,7 @@ export type Sections = {
     reviewer: ModelChoice & { enabled: boolean };
     secondReviewer: ModelChoice & { enabled: boolean };
     subtasks: boolean;
+    approval: boolean;
     limits: { specReview: number; runMinutes: number };
     concurrency: number;
   };

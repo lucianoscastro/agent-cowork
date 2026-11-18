@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
 import { checkpointRef, clearCheckpoints, fromSpec, parseChecks, parseTasks, resumeBuild, reviewPasses, saveCheckpoint, specBrief, taskBrief, taskFingerprints, unproven, validPromotion } from '../src/agents/developer.ts';
-import { lintSpec, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
+import { approvalOf, lintSpec, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
@@ -1103,6 +1103,10 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.equal(pm.subtasks, true);
   assert.equal(write('agents.pm', { ...pm, subtasks: false }).subtasks, false);
   assert.throws(() => write('agents.pm', { ...pm, subtasks: undefined } as never), /subtasks/);
+  // A person's approval of the spec is off until switched on: the card goes straight to the Developer.
+  assert.equal(pm.approval, false);
+  assert.equal(write('agents.pm', { ...pm, approval: true }).approval, true);
+  assert.throws(() => write('agents.pm', { ...pm, approval: undefined } as never), /approval/);
 
   // Attachments are saved under their own name: never a path.
   for (const ok of ['spec.md', 'tasks.md', 'ADR-01-orders-export-format.md', 'Notes (v2).md']) assert.equal(markdownName(ok), true, ok);
@@ -1218,6 +1222,19 @@ test('developer: a spec is built one task at a time, and each task keeps one sub
   const plan = planSubtasks(tasks, [sub('ABC-200', 'T1: Range validation', 'done'), sub('ABC-201', 'T2: CSV'), sub('ABC-202', 'T3: Dropped'), sub('ABC-203', 'T5: Done and dropped', 'done'), sub('ABC-204', 'Write the release notes')]);
   assert.deepEqual(plan, { create: [{ id: 'T4', title: 'Export button' }], rename: [{ key: 'ABC-201', summary: 'T2: CSV writer' }], close: ['ABC-202'] });
   assert.deepEqual(planSubtasks([], []), { create: [], rename: [], close: [] });
+});
+
+test('product manager: only a bare approval word on the card approves the spec; anything else asks for changes', () => {
+  const c = (created: string, text: string) => ({ created, body: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] } });
+  const since = '2026-11-18T10:00:00.000+0000';
+  const after = (text: string) => c('2026-11-18T11:00:00.000+0000', text);
+  // Nobody wrote since the documents were posted (only older comments and the bot's own): still waiting.
+  assert.equal(approvalOf([c('2026-11-18T09:00:00.000+0000', 'aprovado'), after('🤖 Spec documents attached')], since), undefined);
+  for (const ok of ['approved', 'Aprovado!', '✅ aprovado', 'APROBADO.', 'lgtm', 'Approve']) assert.equal(approvalOf([after(ok)], since), 'approved', ok);
+  for (const no of ['aprovado, mas troque o limite para 92 dias', 'not approved', 'ok', 'por que 31 dias?', 'approved 2', '1. approved']) assert.equal(approvalOf([after(no)], since), 'changes', no);
+  // A change request is never dropped for a later approval.
+  assert.equal(approvalOf([after('troque o limite'), c('2026-11-18T12:00:00.000+0000', 'aprovado')], since), 'changes');
+  assert.equal(approvalOf([after('approved'), c('2026-11-18T12:00:00.000+0000', 'LGTM')], since), 'approved');
 });
 
 test('developer: a stopped spec build resumes after the tasks it verified, while they and the base are unchanged', async () => {
