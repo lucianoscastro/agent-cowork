@@ -66,9 +66,10 @@ export async function withRun(meta: RunMeta, fn: (run: Run) => Promise<RunEnd>):
   const limit = new AbortController();
   let deadline = Date.now() + (meta.timeoutMs ?? 0);
   let timer: NodeJS.Timeout | undefined;
+  // A timer holds at most 2^31-1 ms (about 24.8 days): a later deadline is armed again when that one fires.
   const arm = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => limit.abort(new DOMException('run time limit reached', 'TimeoutError')), deadline - Date.now());
+    timer = setTimeout(() => (Date.now() < deadline ? arm() : limit.abort(new DOMException('run time limit reached', 'TimeoutError'))), Math.min(deadline - Date.now(), 2 ** 31 - 1));
   };
   if (meta.timeoutMs) arm();
   const signal = meta.timeoutMs ? AbortSignal.any([controller.signal, limit.signal]) : controller.signal;

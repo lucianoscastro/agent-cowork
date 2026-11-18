@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
-import { checkpointRef, clearCheckpoints, fromSpec, parseChecks, parseTasks, resumeBuild, reviewPasses, saveCheckpoint, specBrief, taskBrief, taskFingerprint, unproven, validPromotion } from '../src/agents/developer.ts';
+import { checkpointRef, clearCheckpoints, fromSpec, parseChecks, parseTasks, resumeBuild, reviewPasses, saveCheckpoint, specBrief, taskBrief, taskFingerprints, unproven, validPromotion } from '../src/agents/developer.ts';
 import { lintSpec, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
@@ -1219,16 +1219,23 @@ test('developer: a spec is built one task at a time, and each task keeps one sub
 });
 
 test('developer: a stopped spec build resumes after the tasks it verified, while they and the base are unchanged', async () => {
-  // The fingerprint follows what a task's build depends on: its text, the criteria it covers, its checks rows.
+  // The fingerprint follows what a task's build depends on: its text, the criteria it covers, its checks rows, and,
+  // chained in order, every earlier task, the design and the context (the exact base, people's comments).
   const spec = '# spec\n\n## Criteria\n\n- **AC1** WHEN a user exports THEN the system SHALL return CSV\n- **AC2** IF the range is longer than 31 days THEN the API SHALL respond 422\n';
   const tasksMd = '# Tasks\n\n## Tasks\n\n### T1: Range validation\n\n- **Covers**: AC2\n\n### T2: CSV writer\n\n- **Covers**: AC1\n\n## Checks\n\n| Criterion | Proven by | Task |\n|---|---|---|\n| AC1 | `a.test.ts`: "returns CSV" | T2 |\n| AC2 | `r.test.ts`: "rejects 32 days" | T1 |\n';
-  const docs = (s: string, t: string) => new Map([['spec.md', s], ['tasks.md', t]]);
-  const fp = (d: Map<string, string>, id: string) => taskFingerprint(d, fromSpec(d, parseChecks), { id, title: '' });
-  const v1 = docs(spec, tasksMd);
-  assert.equal(fp(v1, 'T1'), fp(docs(spec, tasksMd.replace('CSV writer', 'CSV export')), 'T1'));
-  assert.notEqual(fp(v1, 'T1'), fp(docs(spec.replace('31 days', '30 days'), tasksMd), 'T1'));
-  assert.equal(fp(v1, 'T2'), fp(docs(spec.replace('31 days', '30 days'), tasksMd), 'T2'));
-  assert.notEqual(fp(v1, 'T2'), fp(docs(spec, tasksMd.replace('"returns CSV"', '"returns a CSV file"')), 'T2'));
+  const docs = (s: string, t: string, extra: [string, string][] = []) => new Map([['spec.md', s], ['tasks.md', t], ...extra]);
+  const fps = (d: Map<string, string>, context = ['base-sha', '(no comments)']) => taskFingerprints(d, fromSpec(d, parseChecks), parseTasks(d.get('tasks.md') ?? ''), context);
+  const v1 = fps(docs(spec, tasksMd));
+  // T2 changed: T1 keeps its checkpoint.
+  const t2changed = fps(docs(spec, tasksMd.replace('"returns CSV"', '"returns a CSV file"')));
+  assert.deepEqual([t2changed[0] === v1[0], t2changed[1] === v1[1]], [true, false]);
+  assert.equal(fps(docs(spec, tasksMd.replace('CSV writer', 'CSV export')))[0], v1[0]);
+  // A criterion T1 covers changed: T1 and everything after it.
+  assert.deepEqual(fps(docs(spec.replace('31 days', '30 days'), tasksMd)).map((f, i) => f === v1[i]), [false, false]);
+  // The design, the base or a person's comment changed: every task.
+  assert.deepEqual(fps(docs(spec, tasksMd, [['design.md', '# Design']])).map((f, i) => f === v1[i]), [false, false]);
+  assert.deepEqual(fps(docs(spec, tasksMd), ['other-sha', '(no comments)']).map((f, i) => f === v1[i]), [false, false]);
+  assert.deepEqual(fps(docs(spec, tasksMd), ['base-sha', 'Ana (2026-11-18): use semicolons']).map((f, i) => f === v1[i]), [false, false]);
 
   // Checkpoints are refs of the repository, outside the branch: resumed in order, the last task always built again.
   const dir = mkdtempSync(join(tmpdir(), 'resume-'));
@@ -1255,11 +1262,6 @@ test('developer: a stopped spec build resumes after the tasks it verified, while
   assert.equal(await git('rev-parse', 'HEAD'), t1);
   // T1 changed: its new fingerprint has no checkpoint, so everything is built again.
   assert.equal(await resumeBuild(repos, [checkpointRef('ABC-1', { id: 'T1', title: '' }, 'beef'), ...refs.slice(1)]), 0);
-  // The base moved since: building again from it.
-  await git('reset', '-q', '--hard', base);
-  await git('update-ref', 'refs/remotes/origin/main', await commit('moved.txt'));
-  assert.equal(await resumeBuild(repos, refs), 0);
-  await git('update-ref', 'refs/remotes/origin/main', base);
   // Once the PR holds the build, the card's checkpoints go.
   await clearCheckpoints(repos, 'ABC-1');
   assert.equal(await git('for-each-ref', 'refs/agentcowork/'), '');
