@@ -11,6 +11,8 @@ Use TDD where it buys confidence without turning small edits into ceremony. The 
 
 > Atomic test-quality rules (AAA, mock boundaries, brittle assertions, testing anti-patterns) live in the `code-rules` skill. This skill is the TDD *flow* and E2E setup.
 >
+> **Before writing or changing a test**, read [references/writing-good-tests.md](references/writing-good-tests.md): name the break each test catches, derive expected values by hand, never assert on a mock, and run the mutation check.
+>
 > **Scope**: development stage (RED-GREEN-REFACTOR) and versioned E2E tests running on CI/CD. For ad-hoc visual verification of a live environment, use the `browser-qa` skill.
 
 ## When to Activate
@@ -37,6 +39,7 @@ Use TDD where it buys confidence without turning small edits into ceremony. The 
 - Run it. It MUST fail for the right reason
 - A test that was only written but not executed does NOT count as RED
 - The failure must be caused by missing/broken business logic, not syntax errors or broken setup
+- A test that passes at once tests behavior that already exists: fix the test, not the code
 
 Optional commit, only when commits were requested: `test: add reproducer for <feature or bug>`
 

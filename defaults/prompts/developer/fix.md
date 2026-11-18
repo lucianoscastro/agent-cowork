@@ -32,7 +32,7 @@ Make your change for Jira issue {{key}} of the project "{{project}}" ("{{summary
 
 ## Operations
 
-1. Read the failure and find its cause in your change.
+1. Read the whole failure and find its cause in your change, following `systematic-debugging`: one hypothesis at a time, never a guess.
 2. Fix the code. Change a test only when the issue itself changes the expected behavior.
 3. Run the failing command again, then the other "must pass" commands of that repository, until they all pass.
 

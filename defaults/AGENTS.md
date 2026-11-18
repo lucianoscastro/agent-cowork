@@ -85,6 +85,7 @@ Skills load by description. When a task falls in a skill's domain, use the skill
 | Turning a card into spec documents (spec, tasks, design, ADRs), or reviewing them | `spec-writing` |
 | Full code review | `review-code` |
 | Tests, red-green-refactor, regression tests | `tdd-workflow` |
+| A bug, a failing or flaky test or build, a fix that did not work: the root cause first | `systematic-debugging` |
 | APIs, services, data access, error handling | `backend-patterns` |
 | React architecture, state, performance | `frontend-patterns` |
 | UI look, tokens, visual consistency | `design-system` |
