@@ -168,6 +168,7 @@ export type Sections = {
     label: string;
     lead: ModelChoice;
     reviewer: ModelChoice & { enabled: boolean };
+    secondReviewer: ModelChoice & { enabled: boolean };
     limits: { specReview: number; runMinutes: number };
     concurrency: number;
   };

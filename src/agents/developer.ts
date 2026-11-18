@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { outputLanguage, type Project, read, repoFolder, verifyCommands } from '../config.ts';
+import { type ModelChoice, outputLanguage, type Project, read, repoFolder, type Reviewer, verifyCommands } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { env } from '../env.ts';
 import { actionsLinks, failedLogTail, gh, ghJson } from '../integrations/github.ts';
@@ -14,7 +14,7 @@ import { followUpTasks, type WatchedPr } from './pr-follow-up.ts';
 import { runVerify } from './verify.ts';
 import { notify } from '../notify.ts';
 import { brainContext, learning } from '../brain.ts';
-import { databasesPrompt, grantDatabases } from '../databases.ts';
+import { databasesPrompt, grantDatabases, type ToolServer } from '../databases.ts';
 
 /** Failed CI logs linked from the card, for the project's repositories only (at most 3): agents plan without network access. */
 async function ciLogs(text: string, repos: string[]): Promise<string> {
@@ -98,6 +98,26 @@ export function mergeReviews(reviews: Review[]): Review {
   };
 }
 export const formatFindings = (findings: Finding[]) => findings.map((f) => `- [${f.severity}] ${f.where}: ${f.body}`).join('\n');
+
+/**
+ * The independent reviewers that are on (none, one or both): they review in parallel, read only, and with both
+ * each must pass. A reviewer falling back takes the lead's or the other reviewer's provider only when no other is left.
+ */
+export function reviewPanel(run: Run, cfg: { lead: ModelChoice; reviewer: Reviewer; secondReviewer: Reviewer }, cwd: string, tools?: ToolServer) {
+  const reviewers = [cfg.reviewer, cfg.secondReviewer].map((r, i) => ({ ...r, i })).filter((r) => r.enabled);
+  const avoid = [cfg.lead.provider, ...reviewers.map((r) => r.provider)];
+  const review = async (label: string, prompt: string): Promise<Review> => {
+    const reviews = await Promise.all(
+      reviewers.map(async (r) => {
+        const tag = r.i === 0 ? '' : '-2nd';
+        const { output } = await runProvider<Review>(r.provider, { run, label: `${label}${tag}`, prompt, schema: REVIEW_SCHEMA, cwd, mode: 'read-only', model: r.model, avoid, tools });
+        return { ...output, findings: output.findings.map((f) => (r.i === 0 ? f : { ...f, body: `[second reviewer] ${f.body}` })) };
+      }),
+    );
+    return mergeReviews(reviews);
+  };
+  return { size: reviewers.length, review };
+}
 
 /** Agent A: turns agent-ready Jira cards into verified, independently reviewed draft PRs. */
 export async function pollDeveloper(): Promise<void> {
@@ -230,20 +250,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     };
     const lead = (label: string, prompt: string, schema: object, mode: 'read-only' | 'write', subagents?: Record<string, Subagent>) =>
       runProvider(cfg.lead.provider, { run, label, prompt, schema, cwd: workspace, mode, model: cfg.lead.model, subagents, tools: mode === 'write' ? databases?.write : databases?.read });
-    // The independent reviewers that are on (none, one or both) review in parallel; with both, each must pass.
-    const reviewers = [cfg.reviewer, cfg.secondReviewer].map((r, i) => ({ ...r, i })).filter((r) => r.enabled);
-    // A reviewer falling back takes the lead's or the other reviewer's provider only when no other is left.
-    const avoid = [cfg.lead.provider, ...reviewers.map((r) => r.provider)];
-    const reviewer = async (label: string, prompt: string): Promise<{ output: Review }> => {
-      const reviews = await Promise.all(
-        reviewers.map(async (r) => {
-          const tag = r.i === 0 ? '' : '-2nd';
-          const { output } = await runProvider<Review>(r.provider, { run, label: `${label}${tag}`, prompt, schema: REVIEW_SCHEMA, cwd: workspace, mode: 'read-only', model: r.model, avoid, tools: databases?.read });
-          return { ...output, findings: output.findings.map((f) => (r.i === 0 ? f : { ...f, body: `[second reviewer] ${f.body}` })) };
-        }),
-      );
-      return { output: mergeReviews(reviews) };
-    };
+    const reviewers = reviewPanel(run, cfg, workspace, databases?.read);
 
     // --- Plan, with a bounded plan review by the independent reviewer ---
     run.stage('Plan');
@@ -252,9 +259,9 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       if (plan.status === 'needs_input') return await block('waiting', plan.questions);
       // The reviewer judges the kind too: a promotion or a handoff must not stand in for a code change.
       vars.plan = plan.kind === 'code' ? plan.plan : `Kind: ${plan.kind}${plan.promotions.map((p) => `\n- promote ${p.repo}: ${p.from} → ${p.to}`).join('')}\n\n${plan.plan}`;
-      if (round > cfg.limits.planReview || !reviewers.length) break;
+      if (round > cfg.limits.planReview || !reviewers.size) break;
       run.stage(`Plan review ${round}`);
-      const review = (await reviewer(`review-plan-${round}`, await renderPrompt('developer/review-plan', vars))).output;
+      const review = await reviewers.review(`review-plan-${round}`, await renderPrompt('developer/review-plan', vars));
       run.event('artifact', `Plan review ${round}: ${review.verdict}`, review);
       if (reviewPasses(review)) {
         // Outside code the plan is the deliverable a person reads, so the reviewer's minor notes go with it.
@@ -328,9 +335,9 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
 
     // --- Diff review by the independent reviewer; the lead fixes or disputes, bounded ---
     let notes: Finding[] = [];
-    for (let round = 1; round <= cfg.limits.diffReview && reviewers.length; round++) {
+    for (let round = 1; round <= cfg.limits.diffReview && reviewers.size; round++) {
       run.stage(`Diff review ${round}`);
-      const review = (await reviewer(`review-diff-${round}`, await renderPrompt('developer/review-diff', vars))).output;
+      const review = await reviewers.review(`review-diff-${round}`, await renderPrompt('developer/review-diff', vars));
       run.event('artifact', `Diff review ${round}: ${review.verdict}`, review);
       if (reviewPasses(review)) {
         notes = review.findings;

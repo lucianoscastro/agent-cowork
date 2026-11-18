@@ -33,7 +33,7 @@ export function agentStatus(agent: AgentId): { on: boolean; reason?: string; pau
     // The hand-off swaps the label for the Developer's: the same label would send each card back to the Product Manager.
     if (agent === 'pm' && pm.label === (triggerLabel(dev.triggerJql) ?? 'agent-ready')) return off("The trigger label is the Developer's label");
     const roles = agent === 'pm'
-      ? ([['lead', pm.lead], ['reviewer', pm.reviewer]] as const)
+      ? ([['lead', pm.lead], ['reviewer', pm.reviewer], ['second reviewer', pm.secondReviewer]] as const)
       : ([['lead', dev.lead], ['reviewer', dev.reviewer], ['second reviewer', dev.secondReviewer]] as const);
     for (const [role, choice] of roles.filter(([, c]) => !('enabled' in c) || c.enabled)) {
       const p = routeStatus(choice.provider);

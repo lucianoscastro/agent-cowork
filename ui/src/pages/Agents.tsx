@@ -45,7 +45,7 @@ function SaveRow({ action, onSave }: { action: ReturnType<typeof useAction>; onS
 
 const DESCRIPTIONS: Record<AgentId, string> = {
   pm:
-    "Picks cards with the trigger label (agent-spec by default) from each project's Jira board and writes their spec documents: spec.md (the problem and the acceptance criteria), tasks.md, and design.md and ADRs when needed. Gray areas are asked on the card first, in one batch of numbered questions; the run resumes when someone answers. The reviewer checks the documents, then they are attached to the card and the card goes straight to the Developer: the trigger label is swapped for agent-ready. To change a spec, comment what to change and put the label back. It never writes code and never changes priority or estimates.",
+    "Picks cards with the trigger label (agent-spec by default) from each project's Jira board and writes their spec documents: spec.md (the problem and the acceptance criteria), tasks.md, and design.md and ADRs when needed. Gray areas are asked on the card first, in one batch of numbered questions; the run resumes when someone answers. The independent reviewers check the documents (one or two, as in the Developer), then they are attached to the card and the card goes straight to the Developer: the trigger label is swapped for agent-ready. To change a spec, comment what to change and put the label back. It never writes code and never changes priority or estimates.",
   developer:
     "Picks agent-ready cards from each project's Jira board, plans with the lead, has the reviewer check the plan and the diff, verifies with the repository commands and opens a PR per changed repository. Then it follows each PR until it is merged or closed: it answers every review comment (fixing it, or declining it with a justification) and keeps the pipeline green, including quality gates such as SonarQube. Merging stays with humans.",
   approver:
@@ -105,9 +105,16 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
           <h3>{t('Team')}</h3>
           <p className="small muted">{t('Lead')}</p>
           <ModelPicker value={pm.lead} onChange={(lead) => setPm({ ...pm, lead })} settings={settings} />
-          <p className="small muted">{t('An independent reviewer checks the documents before they go to the card.')}</p>
-          <Toggle checked={pm.reviewer.enabled} onChange={(enabled) => setPm({ ...pm, reviewer: { ...pm.reviewer, enabled } })} label="Reviewer" />
+          <p className="small muted">{t('Independent reviewers of the documents: none, one or both. With both, they review in parallel and each must approve.')}</p>
+          <Toggle checked={pm.reviewer.enabled} onChange={(enabled) => setPm({ ...pm, reviewer: { ...pm.reviewer, enabled } })} label="First reviewer" />
           {pm.reviewer.enabled && <ModelPicker value={pm.reviewer} onChange={(r) => setPm({ ...pm, reviewer: { ...r, enabled: true } })} settings={settings} />}
+          <Toggle checked={pm.secondReviewer.enabled} onChange={(enabled) => setPm({ ...pm, secondReviewer: { ...pm.secondReviewer, enabled } })} label="Second reviewer" />
+          {pm.secondReviewer.enabled && (
+            <ModelPicker value={pm.secondReviewer} onChange={(r) => setPm({ ...pm, secondReviewer: { ...r, enabled: true } })} settings={settings} />
+          )}
+          {!pm.reviewer.enabled && !pm.secondReviewer.enabled && (
+            <p className="message warn">{t('No reviewer: the documents go to the Developer unreviewed; only the people on the code PR check them.')}</p>
+          )}
           <h3>{t('Loop limits')}</h3>
           <div className="row">
             <Field label="Spec review rounds">

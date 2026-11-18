@@ -137,7 +137,9 @@ export type Settings = {
     enabled: boolean;
     label: string;
     lead: ModelChoice;
+    // Independent reviewers of the documents, as in the Developer: none, one or both; with both, each must approve.
     reviewer: Reviewer;
+    secondReviewer: Reviewer;
     limits: { specReview: number; runMinutes: number };
     concurrency: number;
   };
@@ -230,6 +232,7 @@ export const DEFAULTS: Settings = {
     label: 'agent-spec',
     lead: { provider: 'claude', model: 'opus' },
     reviewer: { enabled: true, provider: 'codex', model: '' },
+    secondReviewer: { enabled: false, provider: 'agy', model: '' },
     limits: { specReview: 2, runMinutes: 60 },
     concurrency: 1,
   },
@@ -304,7 +307,13 @@ export function read<K extends SectionKey>(key: K): Settings[K] {
   if (key === 'agents.pm') {
     const pm = value as Settings['agents.pm'];
     const d = DEFAULTS['agents.pm'];
-    return { ...d, ...pm, limits: { ...d.limits, ...pm.limits }, reviewer: { ...d.reviewer, ...pm.reviewer } } as Settings[K];
+    return {
+      ...d,
+      ...pm,
+      limits: { ...d.limits, ...pm.limits },
+      reviewer: { ...d.reviewer, ...pm.reviewer },
+      secondReviewer: { ...d.secondReviewer, ...pm.secondReviewer },
+    } as Settings[K];
   }
   // Fields added in later versions get their default in sections saved before them.
   return { ...DEFAULTS[key], ...value };
@@ -567,6 +576,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           label: jiraLabel(o, key),
           lead: choice(o.lead, `${key}.lead`),
           reviewer: reviewer(o.reviewer, `${key}.reviewer`),
+          secondReviewer: reviewer(o.secondReviewer, `${key}.secondReviewer`),
           limits: { specReview: int(limits, 'specReview', `${key}.limits`, 0, 10), runMinutes: int(limits, 'runMinutes', `${key}.limits`, 5, 600) },
           concurrency: int(o, 'concurrency', key, 1, 4),
         };

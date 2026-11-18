@@ -11,7 +11,7 @@ import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
 import { wake } from '../scheduler.ts';
 import { type Checkout, checkout, forEachLimit, log, removeCheckout, renderPrompt } from '../sh.ts';
-import { type Finding, formatFindings, REVIEW_SCHEMA, type Review, reviewPasses } from './developer.ts';
+import { type Finding, formatFindings, reviewPanel, reviewPasses } from './developer.ts';
 import { takeForce } from './status.ts';
 
 const { BOT_MARK } = jira;
@@ -141,22 +141,22 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     let spec = await lead('specify');
     if (spec.status === 'needs_input') return await ask(run, key, spec.questions, dryRun);
 
-    // --- Review by an independent model, bounded; what is left goes on the card for the people reviewing the code ---
+    // --- Review by the independent reviewers (none, one or both, as in the Developer), bounded; what is left goes on the card ---
     let findings: Finding[] = [];
     let passed = true;
-    const rounds = cfg.reviewer.enabled ? cfg.limits.specReview : 0;
+    const reviewers = reviewPanel(run, cfg, workspace);
+    const rounds = reviewers.size ? cfg.limits.specReview : 0;
     for (let round = 1; round <= rounds; round++) {
       run.stage(`Spec review ${round}`);
-      const prompt = await renderPrompt('pm/review-spec', vars);
-      const { output: review } = await runProvider<Review>(cfg.reviewer.provider, { run, label: `review-spec-${round}`, prompt, schema: REVIEW_SCHEMA, cwd: workspace, mode: 'read-only', model: cfg.reviewer.model, avoid: [cfg.lead.provider] });
+      const review = await reviewers.review(`review-spec-${round}`, await renderPrompt('pm/review-spec', vars));
       run.event('artifact', `Spec review ${round}: ${review.verdict}`, review);
       findings = review.findings;
       passed = reviewPasses(review);
       if (passed || round === rounds) break;
-      signals.push(`The spec reviewer asked for changes (the documents were revised):\n${formatFindings(review.findings)}`);
+      signals.push(`The spec review asked for changes (the documents were revised):\n${formatFindings(review.findings)}`);
       run.stage(`Revise ${round}`);
       spec = await lead(`revise-${round}`, {
-        reviewContext: `## Review findings\n\nAn independent reviewer read your documents in \`${SPEC}/\` and asked for changes. Fix every blocker and major finding (or say in \`summary\` why one does not apply), then return all the fields again, with every document in \`files\`.\n\n<review_findings>\n${formatFindings(review.findings)}\n</review_findings>`,
+        reviewContext: `## Review findings\n\nThe independent review read your documents in \`${SPEC}/\` and asked for changes. Fix every blocker and major finding (or say in \`summary\` why one does not apply), then return all the fields again, with every document in \`files\`.\n\n<review_findings>\n${formatFindings(review.findings)}\n</review_findings>`,
       });
       // A finding only people can settle: ask, and hand nothing to the Developer yet.
       if (spec.status === 'needs_input') return await ask(run, key, spec.questions, dryRun);

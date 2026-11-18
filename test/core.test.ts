@@ -1092,6 +1092,10 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.equal(write('agents.pm', pm).label, 'agent-spec');
   assert.throws(() => write('agents.pm', { ...pm, label: 'agent spec' }), /one Jira label/);
   assert.throws(() => write('agents.pm', { ...pm, label: 'x" OR project = OTHER' }), /one Jira label/);
+  // Two independent reviewers, as in the Developer: the second is off until switched on, and both are validated.
+  assert.deepEqual([pm.reviewer.enabled, pm.secondReviewer.enabled], [true, false]);
+  assert.equal(write('agents.pm', { ...pm, secondReviewer: { ...pm.secondReviewer, enabled: true } }).secondReviewer.enabled, true);
+  assert.throws(() => write('agents.pm', { ...pm, secondReviewer: { provider: 'agy', model: '' } }), /secondReviewer/);
 
   // Attachments are saved under their own name: never a path.
   for (const ok of ['spec.md', 'tasks.md', 'ADR-01-orders-export-format.md', 'Notes (v2).md']) assert.equal(markdownName(ok), true, ok);
