@@ -133,9 +133,11 @@ export type Settings = {
   };
   // A card with `label` gets its spec documents (spec, design, ADRs, tasks) as Markdown attachments, then goes
   // to the Developer, straight away or once a person approves it on the card: the label is swapped for the Developer's.
+  // A card with `discoveryLabel` gets a discovery and its prototypes instead, for people to approve; nothing is built.
   'agents.pm': Shadow & {
     enabled: boolean;
     label: string;
+    discoveryLabel: string;
     lead: ModelChoice;
     // Independent reviewers of the documents, as in the Developer: none, one or both; with both, each must approve.
     reviewer: Reviewer;
@@ -237,6 +239,7 @@ export const DEFAULTS: Settings = {
     enabled: false,
     dryRun: true,
     label: 'agent-spec',
+    discoveryLabel: 'agent-discovery',
     lead: { provider: 'claude', model: 'opus' },
     reviewer: { enabled: true, provider: 'codex', model: '' },
     secondReviewer: { enabled: false, provider: 'agy', model: '' },
@@ -353,9 +356,9 @@ function str(o: Obj, k: string, where: string, { required = false, max = 2000 } 
   return v.trim();
 }
 /** One Jira label: no spaces, so it is safe inside the JQL it builds. */
-function jiraLabel(o: Obj, where: string): string {
-  const label = str(o, 'label', where, { required: true, max: 60 });
-  if (!/^[\w.-]+$/.test(label)) throw new Error(`${where}.label must be one Jira label: letters, digits, dots, dashes or underscores`);
+function jiraLabel(o: Obj, where: string, k = 'label'): string {
+  const label = str(o, k, where, { required: true, max: 60 });
+  if (!/^[\w.-]+$/.test(label)) throw new Error(`${where}.${k} must be one Jira label: letters, digits, dots, dashes or underscores`);
   return label;
 }
 function bool(o: Obj, k: string, where: string): boolean {
@@ -581,9 +584,14 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
       }
       case 'agents.pm': {
         const limits = obj(o.limits, `${key}.limits`);
+        const label = jiraLabel(o, key);
+        const discoveryLabel = jiraLabel(o, key, 'discoveryLabel');
+        // Jira matches labels whatever their case.
+        if (discoveryLabel.toLowerCase() === label.toLowerCase()) throw new Error(`${key}.discoveryLabel must differ from ${key}.label`);
         return {
           enabled: bool(o, 'enabled', key),
-          label: jiraLabel(o, key),
+          label,
+          discoveryLabel,
           lead: choice(o.lead, `${key}.lead`),
           reviewer: reviewer(o.reviewer, `${key}.reviewer`),
           secondReviewer: reviewer(o.secondReviewer, `${key}.secondReviewer`),

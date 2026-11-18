@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { read, SECRETS } from '../config.ts';
 import { getSecret } from '../db.ts';
@@ -14,6 +14,7 @@ export type Issue = {
     status: { name: string; statusCategory: { key: string } };
     labels: string[];
     subtasks?: Subtask[];
+    parent?: { key: string };
   };
 };
 export type Subtask = { key: string; fields: { summary: string; status: { statusCategory: { key: string } } } };
@@ -81,7 +82,7 @@ export async function searchBoard(boardId: string, jql: string): Promise<string[
 export const missing = (err: unknown) => /: 404 /.test((err as Error).message);
 
 export function getIssue(key: string): Promise<Issue> {
-  return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status,labels,subtasks`);
+  return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status,labels,subtasks,parent`);
 }
 
 /** Takes labels off a card and puts others on, in one update (a label already in that state is a no-op). */
@@ -96,19 +97,21 @@ type Attachment = { filename: string; created: string; size: number; content: st
 /** A name safe to save under a folder: a Markdown file name, no path. Exported for tests. */
 export const markdownName = (name: string) => /^[\w][\w .()-]{0,120}\.md$/i.test(name) && !name.includes('..');
 /**
- * The Product Manager's documents, and the clickable prototypes it adds when people approve them on the card. Each
- * version is attached as a whole set, so a version drops one by leaving it out.
+ * The Product Manager's documents: a spec, or a discovery, with the clickable prototypes it adds when people approve
+ * them on the card. Each version is attached as a whole set, so a version drops one by leaving it out.
  */
-export const SPEC_DOC = /^(spec|design|tasks)\.md$|^ADR-\d{2}-[\w-]{1,80}\.md$|^mockup-[\w-]{1,80}\.html$/;
+export const SPEC_DOC = /^(spec|design|tasks|discovery)\.md$|^ADR-\d{2}-[\w-]{1,80}\.md$|^mockup-[\w-]{1,80}\.html$/;
+/** A discovery's documents: what it proposes and the prototypes of its screens. */
+export const DISCOVERY_DOC = /^discovery\.md$|^mockup-[\w-]{1,80}\.html$/;
 
 /**
  * Which attachments a run reads, the newest of each name: people's Markdown notes, and of the spec documents only
- * the set attached with the newest `spec.md`. Exported for tests.
+ * the set attached with the newest `spec.md` or `discovery.md`. Exported for tests.
  * ponytail: a version is one upload, seconds apart; a minute of slack.
  */
 export function currentDocs<T extends Pick<Attachment, 'filename' | 'created'>>(attachments: T[]): T[] {
   const sorted = attachments.filter((a) => markdownName(a.filename) || SPEC_DOC.test(a.filename)).sort((x, y) => Date.parse(x.created) - Date.parse(y.created));
-  const spec = sorted.findLast((a) => a.filename === 'spec.md');
+  const spec = sorted.findLast((a) => a.filename === 'spec.md' || a.filename === 'discovery.md');
   const since = spec ? Date.parse(spec.created) - 60_000 : 0;
   const latest = new Map<string, T>();
   for (const a of sorted) if (!SPEC_DOC.test(a.filename) || Date.parse(a.created) >= since) latest.set(a.filename, a);
@@ -118,14 +121,16 @@ export function currentDocs<T extends Pick<Attachment, 'filename' | 'created'>>(
 }
 
 /**
- * Saves the card's current Markdown attachments and prototypes in `dir` (see `currentDocs`) and returns their names. Credentials
- * go only to the configured Jira site.
+ * Saves the card's current Markdown attachments and prototypes in `dir` (see `currentDocs`), only those whose name
+ * `pick` takes, and returns their names. Credentials go only to the configured Jira site.
  * ponytail: at most 20 files of up to 200 KB each; a card's spec is a handful of small files.
  */
-export async function saveMarkdownAttachments(key: string, dir: string): Promise<string[]> {
+export async function saveMarkdownAttachments(key: string, dir: string, pick: (name: string) => boolean = () => true): Promise<string[]> {
   const { url, email } = read('jira');
   const { fields } = await api<{ fields: { attachment?: Attachment[] } }>(`api/3/issue/${key}?fields=attachment`);
-  const files = currentDocs((fields.attachment ?? []).filter((a) => a.size <= 200_000 && a.content.startsWith(`${url}/`))).slice(0, 20);
+  const files = currentDocs((fields.attachment ?? []).filter((a) => a.size <= 200_000 && a.content.startsWith(`${url}/`)))
+    .filter((a) => pick(a.filename))
+    .slice(0, 20);
   await mkdir(dir, { recursive: true });
   for (const a of files) {
     const res = await fetch(a.content, { headers: { Authorization: `Basic ${btoa(`${email}:${getSecret(SECRETS.jiraToken) ?? ''}`)}` } });
@@ -133,6 +138,20 @@ export async function saveMarkdownAttachments(key: string, dir: string): Promise
     await writeFile(join(dir, a.filename), Buffer.from(await res.arrayBuffer()));
   }
   return files.map((a) => a.filename);
+}
+
+/**
+ * The discovery a card is part of: when its parent card holds a `discovery.md`, the parent's current discovery and
+ * prototypes are saved in `dir`, and its key and their names returned; otherwise nothing, and `dir` stays absent.
+ * ponytail: the latest version, approved or not; people create the child cards once the discovery is approved.
+ */
+export async function saveDiscovery(issue: Issue, dir: string): Promise<{ key: string; files: string[] } | undefined> {
+  const parent = issue.fields.parent?.key;
+  if (!parent) return undefined;
+  const files = await saveMarkdownAttachments(parent, dir, (name) => DISCOVERY_DOC.test(name));
+  if (files.includes('discovery.md')) return { key: parent, files };
+  await rm(dir, { recursive: true, force: true });
+  return undefined;
 }
 
 /** Accepts either the transition name or its target status name, case-insensitively. */

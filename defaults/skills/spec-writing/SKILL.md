@@ -1,6 +1,6 @@
 ---
 name: spec-writing
-description: "Turns one card or request into the documents an agent builds from, with no human in the loop: spec.md (problem, EARS criteria with concrete values, out of scope, assumptions, open questions, and the path, data and one-way doors when they apply), design.md, ADRs and tasks.md (ordered atomic tasks, a test each, a check per criterion), sized to the work. Gray areas are returned as numbered questions for people to answer, never guessed. Use when writing spec documents for a card, when answers to earlier questions arrive or people ask for a new version, and when reviewing such documents before they are attached to the card."
+description: "Turns one card or request into the documents an agent builds from, with no human in the loop: spec.md (problem, EARS criteria with concrete values, out of scope, assumptions, open questions, and the path, data and one-way doors when they apply), design.md, ADRs and tasks.md (ordered atomic tasks, a test each, a check per criterion), sized to the work. Gray areas are returned as numbered questions for people to answer, never guessed. Also writes a discovery (discovery.md and clickable prototypes of the main screens) for work people explore and approve before anything is specified, such as rethinking how a product looks and flows. Use when writing spec or discovery documents for a card, when answers to earlier questions arrive or people ask for a new version, and when reviewing such documents before they are attached to the card."
 metadata:
   origin: "adapted"
 ---
@@ -17,6 +17,7 @@ The common failure starts here: a requirement that never became an obligation. A
 - Continuing a card after its questions were answered on the card
 - Writing a new version when people put the card back for one
 - Reviewing such documents before they are attached: read [references/review.md](references/review.md)
+- Writing or reviewing a discovery, when the run's prompt asks for one: follow [references/discovery.md](references/discovery.md) instead of the method below
 
 ## Where you work
 
@@ -33,7 +34,8 @@ spec/                     # the run's work folder; each file becomes an attachme
 ├── design.md             # only Large/Complex: architecture, components, data
 ├── ADR-NN-<slug>.md      # only one-way doors, numbered within the card (ADR-01, ADR-02)
 ├── tasks.md              # omitted for Small (≤3 obvious steps): then spec.md ends with a ## Tasks list and ## Checks
-└── mockup-<flow>.html    # only when people approve the documents on the card and the card changes a screen
+├── mockup-<flow>.html    # only when people approve the documents on the card and the card changes a screen
+└── discovery.md          # only a discovery, with its mockup-<area>.html and none of the files above
 ```
 
 - Flat: no subfolders, since every file is attached under its own name. Links between them are plain names (`spec.md`, `ADR-01-orders-export-format.md`).
@@ -101,7 +103,8 @@ The work decides the depth, not a fixed pipeline. Size from evidence in the code
 | [references/tasks.md](references/tasks.md) | writing `tasks.md`, or the `## Tasks` and `## Checks` of a Small spec |
 | [references/decisions.md](references/decisions.md) | a one-way door needs an ADR |
 | [references/questions.md](references/questions.md) | a gray area needs a person, or answers arrived |
-| [references/mockups.md](references/mockups.md) | people approve the documents on the card and the card changes a screen |
+| [references/mockups.md](references/mockups.md) | people approve the documents on the card and the card changes a screen, or a discovery changes what people see |
+| [references/discovery.md](references/discovery.md) | the run asks for a discovery: its method, template and review checklist |
 | [references/review.md](references/review.md) | reviewing the documents, your own or as the second model |
 
 Attribution and changes from the sources: [NOTICE.md](NOTICE.md).

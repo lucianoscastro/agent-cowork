@@ -71,7 +71,7 @@ export function safeEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 }
 
 /** Text people wrote, for a prompt: it cannot close the tags prompts wrap untrusted text in and pass the rest off as instructions. */
-export const untrusted = (text: string) => text.replace(/<\/?\s*(replies|signals|outcome|pr_description|brain-note)\b[^>]*>/gi, '');
+export const untrusted = (text: string) => text.replace(/<\/?\s*(replies|signals|outcome|pr_description|brain-note|issue|comments)\b[^>]*>/gi, '');
 
 export async function renderPrompt(name: string, vars: Record<string, string>): Promise<string> {
   const template = await readFile(asset(`prompts/${name}.md`).path, 'utf8');

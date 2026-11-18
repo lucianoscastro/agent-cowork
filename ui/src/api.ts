@@ -162,10 +162,14 @@ export type Sections = {
     exploreEveryHours: number;
     bugIssueType: string;
   };
-  /** A card with `label` gets its spec documents as attachments, then goes to the Developer (after a person approves them, with `approval`). */
+  /**
+   * A card with `label` gets its spec documents as attachments, then goes to the Developer (after a person approves them,
+   * with `approval`); one with `discoveryLabel` gets a discovery for a person to approve, and nothing is built from it.
+   */
   'agents.pm': Shadow & {
     enabled: boolean;
     label: string;
+    discoveryLabel: string;
     lead: ModelChoice;
     reviewer: ModelChoice & { enabled: boolean };
     secondReviewer: ModelChoice & { enabled: boolean };

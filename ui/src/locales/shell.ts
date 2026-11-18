@@ -78,8 +78,8 @@ const translations = {
     'Merges green patch and minor Dependabot PRs; sends the rest to a person.': 'Faz o merge dos PRs patch e minor do Dependabot que estão verdes; envia o resto para uma pessoa.',
     'Turns agent-ready Jira cards into verified PRs and keeps them green until they close.':
       'Transforma cards do Jira prontos para o agente em PRs verificados e os mantém verdes até fecharem.',
-    'Turns agent-spec Jira cards into spec, design and task documents attached to the card, then hands them to the Developer.':
-      'Transforma cards do Jira com agent-spec em documentos de especificação, design e tarefas anexados ao card, e os passa ao Developer.',
+    'Turns agent-spec Jira cards into spec, design and task documents attached to the card, then hands them to the Developer; agent-discovery cards get a discovery with prototypes for approval.':
+      'Transforma cards do Jira com agent-spec em documentos de especificação, design e tarefas anexados ao card, e os passa ao Developer; cards com agent-discovery recebem um discovery com protótipos para aprovação.',
     'Audits each repository by category (security, privacy, performance…) when its code moves.':
       'Audita cada repositório por categoria (segurança, privacidade, desempenho…) quando o código muda.',
     "Runs each test environment's end-to-end suite, reproduces real failures and files them as bugs.":
@@ -160,8 +160,8 @@ const translations = {
     'Merges green patch and minor Dependabot PRs; sends the rest to a person.': 'Fusiona los PR patch y minor de Dependabot en verde; envía el resto a una persona.',
     'Turns agent-ready Jira cards into verified PRs and keeps them green until they close.':
       'Convierte las tarjetas de Jira listas para el agente en PR verificados y los mantiene en verde hasta que se cierran.',
-    'Turns agent-spec Jira cards into spec, design and task documents attached to the card, then hands them to the Developer.':
-      'Convierte las tarjetas de Jira con agent-spec en documentos de especificación, diseño y tareas adjuntos a la tarjeta, y las pasa al Developer.',
+    'Turns agent-spec Jira cards into spec, design and task documents attached to the card, then hands them to the Developer; agent-discovery cards get a discovery with prototypes for approval.':
+      'Convierte las tarjetas de Jira con agent-spec en documentos de especificación, diseño y tareas adjuntos a la tarjeta, y las pasa al Developer; las tarjetas con agent-discovery reciben un discovery con prototipos para su aprobación.',
     'Audits each repository by category (security, privacy, performance…) when its code moves.':
       'Audita cada repositorio por categoría (seguridad, privacidad, rendimiento…) cuando cambia su código.',
     "Runs each test environment's end-to-end suite, reproduces real failures and files them as bugs.":

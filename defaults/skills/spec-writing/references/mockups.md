@@ -1,6 +1,6 @@
 # Prototypes
 
-Only when the run's prompt says people approve the documents on the card before the Developer builds, and the card changes what a person sees. A clickable prototype lets them react to the screens before any code exists: a misunderstanding that hides for days in prose shows in seconds on a screen.
+Only when the run's prompt says people approve the documents on the card before the Developer builds, and the card changes what a person sees, or when it asks for a discovery ([discovery.md](discovery.md)). A clickable prototype lets them react to the screens before any code exists: a misunderstanding that hides for days in prose shows in seconds on a screen.
 
 ## What to make
 
@@ -18,6 +18,18 @@ Only when the run's prompt says people approve the documents on the card before 
 - Plain HTML, CSS and JavaScript: no framework and no build step. Under 150 KB.
 - Real buttons and labels, visible focus, usable with the keyboard.
 - It is not the implementation. The Developer builds with the repository's own components and tokens, following the prototype's content and flow, never its markup.
+
+## In a discovery
+
+The prototype shows the proposed direction, not criteria: the screens of `## Screens` in `discovery.md`, drawn as they would become.
+
+- **One file per area** of the product, its screens linked by the navigation the direction proposes, so people walk the product the way they will use it.
+- **The new look.** The colors, type, spacing and radius the direction proposes, as CSS variables at the top of the file, so the child cards can lift them. When the direction keeps today's look, copy the repository's tokens instead.
+- **The states that decide the direction** (an empty list, an error, a long table), not every state: the child cards' criteria cover the rest.
+- **Fictional data, and the banner**: "Prototype - illustrative only; discovery.md decides." Named under `## Sources` of `discovery.md` with the screens it shows.
+- **The limits above** hold: one whole offline document, plain HTML, CSS and JavaScript, under 150 KB, usable with the keyboard.
+
+A card created under an approved discovery already has its screens drawn there: a prototype of that card covers only what it changes beyond the discovery's, or there is none.
 
 ## New versions
 

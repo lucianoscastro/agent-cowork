@@ -78,7 +78,7 @@ Each surface the card exposes was walked ([spec.md](spec.md)):
 
 ### Prototype (when people approve the documents)
 
-- When the prompt says people approve the documents on the card, a card that changes what a person sees has a prototype of each changed flow; a missing one is a major finding.
+- When the prompt says people approve the documents on the card, a card that changes what a person sees has a prototype of each changed flow; a missing one is a major finding. A card under a discovery whose prototypes already draw the flow needs none of its own.
 - Each screen and state it shows comes from a criterion, with the criterion's values; a control, field or state no criterion has is a gap in the criteria (major).
 - Fictional data only, a banner saying it is illustrative, named under `## Sources` of `spec.md` with the criteria it shows, and no web address ([mockups.md](mockups.md)).
 

@@ -276,7 +276,7 @@ export const AGENT_NAMES = { approver: 'Approver', dependabot: 'Dependabot', pm:
 export const AGENT_SUMMARY = {
   approver: 'Reviews PRs that request your review directly; approves when there is nothing to suggest.',
   dependabot: 'Merges green patch and minor Dependabot PRs; sends the rest to a person.',
-  pm: 'Turns agent-spec Jira cards into spec, design and task documents attached to the card, then hands them to the Developer.',
+  pm: 'Turns agent-spec Jira cards into spec, design and task documents attached to the card, then hands them to the Developer; agent-discovery cards get a discovery with prototypes for approval.',
   developer: 'Turns agent-ready Jira cards into verified PRs and keeps them green until they close.',
   auditor: 'Audits each repository by category (security, privacy, performance…) when its code moves.',
   sentinel: "Runs each test environment's end-to-end suite, reproduces real failures and files them as bugs.",

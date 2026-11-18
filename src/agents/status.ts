@@ -31,7 +31,9 @@ export function agentStatus(agent: AgentId): { on: boolean; reason?: string; pau
     const dev = read('agents.developer');
     const pm = read('agents.pm');
     // The hand-off swaps the label for the Developer's: the same label would send each card back to the Product Manager.
-    if (agent === 'pm' && pm.label === (triggerLabel(dev.triggerJql) ?? 'agent-ready')) return off("The trigger label is the Developer's label");
+    const ready = (triggerLabel(dev.triggerJql) ?? 'agent-ready').toLowerCase();
+    if (agent === 'pm' && pm.label.toLowerCase() === ready) return off("The trigger label is the Developer's label");
+    if (agent === 'pm' && pm.discoveryLabel.toLowerCase() === ready) return off("The discovery label is the Developer's label");
     const roles = agent === 'pm'
       ? ([['lead', pm.lead], ['reviewer', pm.reviewer], ['second reviewer', pm.secondReviewer]] as const)
       : ([['lead', dev.lead], ['reviewer', dev.reviewer], ['second reviewer', dev.secondReviewer]] as const);
