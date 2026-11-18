@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type ModelChoice, outputLanguage, type Project, read, repoFolder, type Reviewer, verifyCommands } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { env } from '../env.ts';
 import { actionsLinks, failedLogTail, gh, ghJson } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
+import { playwrightConfig } from '../providers/browser.ts';
 import { runProvider, type Subagent } from '../providers/index.ts';
 import { withRun, type Run, type RunEnd } from '../runs.ts';
 import { type Checkout, checkout, forEachLimit, log, removeCheckout, renderPrompt, run as sh } from '../sh.ts';
@@ -265,6 +267,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     const comments = jira.formatComments(issue.fields.comment.comments);
     const people = issue.fields.comment.comments.filter((c) => !jira.adfToText(c.body).trimStart().startsWith(BOT_MARK));
     if (people.length) signals.push(`People wrote on card ${key}:\n${jira.formatComments(people).slice(-6000)}`);
+    // A Claude lead building a project with a React repository checks its UI changes in a browser, on localhost.
+    const ui = cfg.browserCheck && cfg.lead.provider === 'claude' && Object.values(project.repos).some((r) => r.stack === 'react');
     const vars: Record<string, string> = {
       key,
       project: project.name,
@@ -281,9 +285,10 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       databases: databasesPrompt(project),
       spec: specBrief('spec', docs),
       task: '',
+      browser: ui ? BROWSER_BRIEF : '',
     };
-    const lead = (label: string, prompt: string, schema: object, mode: 'read-only' | 'write', subagents?: Record<string, Subagent>) =>
-      runProvider(cfg.lead.provider, { run, label, prompt, schema, cwd: workspace, mode, model: cfg.lead.model, subagents, tools: mode === 'write' ? databases?.write : databases?.read });
+    const lead = (label: string, prompt: string, schema: object, mode: 'read-only' | 'write', subagents?: Record<string, Subagent>, browserIfClaude?: string) =>
+      runProvider(cfg.lead.provider, { run, label, prompt, schema, cwd: workspace, mode, model: cfg.lead.model, subagents, browserIfClaude, tools: mode === 'write' ? databases?.write : databases?.read });
     const reviewers = reviewPanel(run, cfg, workspace, databases?.read);
 
     // --- Plan, with a bounded plan review by the independent reviewer ---
@@ -407,7 +412,13 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
         run.stage(`Build ${task.id}`);
         vars.task = taskBrief(task, tasks);
       }
-      built = (await lead(task ? `build-${task.id}` : 'build', await renderPrompt('developer/implement', vars), BUILD_SCHEMA, 'write', subagents)).output as Built;
+      const label = task ? `build-${task.id}` : 'build';
+      const browser = ui ? await localBrowser(run, label) : undefined;
+      try {
+        built = (await lead(label, await renderPrompt('developer/implement', vars), BUILD_SCHEMA, 'write', subagents, browser?.config)).output as Built;
+      } finally {
+        await browser?.collect();
+      }
       if (built.status === 'needs_input') return await ask(built.summary);
       // Each task proves its own rows of the checks table; the last one proves them all, a row naming no task included.
       const rows = !task || i === steps.length - 1 ? checks : checks.filter((c) => new RegExp(`\\b${task.id}\\b`).test(c.task));
@@ -515,6 +526,28 @@ export function taskBrief(task: Task, tasks: Task[]): string {
     `- After this call the platform commits the task and runs the must-pass commands, then checks that the tests the \`## Checks\` table names for ${task.id} are in the change.`,
     '- For "done", `summary` is this task\'s part of the pull request description: **Result** and **How to test** for this task only (no **Plan**: the approved plan stands for all tasks). `title` names the whole change: it becomes the pull request title.',
   ].join('\n');
+}
+
+/** What a build call with the browser tools is told. */
+const BROWSER_BRIEF =
+  '## Browser\n\nThis call has a headless browser (the `playwright` tools, when your runtime offers them) that reaches only `http://localhost` and `http://127.0.0.1`. When your change alters what a person sees, load the `browser-check` skill and follow it: run the app from your checkout, check the changed screens and the console, then stop everything you started. Say what you checked under **How to test**, and what you could not run and why. Screenshots stay in the run\'s log, never in the repository.';
+
+/**
+ * Browser tools for a build call: headless and isolated, its requests kept to localhost, where the lead runs the app it
+ * changed (the lead's shell reaches the network anyway: the origins keep the browser on the app, they are no boundary).
+ * The screenshots move flat into the run's folder, named after the call, so the run page lists them.
+ */
+async function localBrowser(run: Run, label: string): Promise<{ config: string; collect: () => Promise<void> }> {
+  const outDir = join(run.logDir, `${label}-browser`);
+  await mkdir(outDir, { recursive: true });
+  const config = join(tmpdir(), `developer-${run.id}-${label}-mcp.json`);
+  await writeFile(config, playwrightConfig(outDir, ['--allowed-origins', 'http://localhost:*;http://127.0.0.1:*', '--console-level', 'warning', '--viewport-size', '1440x900']));
+  const collect = async () => {
+    await rm(config, { force: true });
+    for (const f of await readdir(outDir).catch(() => [])) if (/\.(png|jpe?g)$/i.test(f)) await rename(join(outDir, f), join(run.logDir, `${label}-${f}`));
+    await rm(outDir, { recursive: true, force: true });
+  };
+  return { config, collect };
 }
 
 /** A task's text in `tasks.md`: its heading up to the next task's. */

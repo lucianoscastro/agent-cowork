@@ -6,6 +6,8 @@ export type StreamResult = { stdout: string; stderr: string; code: number | null
 /**
  * Runs a runtime CLI, teeing stdout to a transcript file as it streams. Unlike execFile it keeps no
  * output-size ceiling on the transcript, and it kills the process when the run's signal aborts.
+ * The runtime leads its own process group: when it exits, whatever it left running (a dev server, a watcher)
+ * is killed with it, and never holds the output open or outlives the call.
  */
 export function spawnStream(
   cmd: string,
@@ -13,7 +15,14 @@ export function spawnStream(
   opts: { cwd: string; env: NodeJS.ProcessEnv; input?: string; signal: AbortSignal; transcript: string },
 ): Promise<StreamResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, signal: opts.signal, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, signal: opts.signal, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    child.on('exit', () => {
+      try {
+        process.kill(-child.pid!, 'SIGKILL');
+      } catch {
+        // the group is already gone
+      }
+    });
     const file = createWriteStream(opts.transcript, { flags: 'a' });
     let stdout = '';
     let stderr = '';

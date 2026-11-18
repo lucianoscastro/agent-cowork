@@ -37,6 +37,8 @@ Resolve Jira issue {{key}} of the project "{{project}}": "{{summary}}". Fix the 
 
 {{databases}}
 
+{{browser}}
+
 ## Operations
 
 1. In each repository you change, read its agent instructions (`CLAUDE.md`, `AGENTS.md`) and README, and follow their conventions.

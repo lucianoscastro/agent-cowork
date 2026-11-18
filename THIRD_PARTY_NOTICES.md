@@ -3,7 +3,7 @@
 ## Everything Claude Code (ECC)
 
 The following default skills in `defaults/skills/` are derived from
-[Everything Claude Code](https://github.com/affaan-m/ECC) and carry `origin: ECC` in their frontmatter:
+[Everything Claude Code](https://github.com/affaan-m/ECC) and carry `metadata.origin: ECC` in their frontmatter:
 `backend-patterns`, `codebase-onboarding`, `design-system`, `frontend-patterns`, `git-workflow`, `tdd-workflow`.
 
 MIT License
@@ -30,14 +30,22 @@ SOFTWARE.
 
 ## ui-taste
 
-The `ui-taste` skill in `defaults/skills/ui-taste/` (`origin: custom`) is synthesised from Anthropic's
+The `ui-taste` skill in `defaults/skills/ui-taste/` (`metadata.origin: custom`) is synthesised from Anthropic's
 `frontend-design` skill (Apache License 2.0), Leonxlnx's `taste-skill` / `design-taste-frontend` 2.5.1 (MIT) and
 superdesign's `superdesign-skill` (MIT). Its product-UI rules, Portuguese copy tells and scanner are additions.
 Each source is used under its own license; the Apache License 2.0 text is at https://www.apache.org/licenses/LICENSE-2.0.
 
+## browser-check
+
+The `browser-check` skill in `defaults/skills/browser-check/` (`metadata.origin: adapted`) is adapted from Anthropic's
+`webapp-testing` skill ([anthropics/skills](https://github.com/anthropics/skills), Apache License 2.0, Copyright 2026
+Anthropic, PBC): the server lifecycle, the wait-before-inspecting rule and the look-then-act pattern, rewritten for the
+Playwright MCP tools instead of Python scripts. The steps on states, viewport, keyboard, evidence and reporting are
+additions. The Apache License 2.0 text is at https://www.apache.org/licenses/LICENSE-2.0.
+
 ## spec-writing
 
-The `spec-writing` skill in `defaults/skills/spec-writing/` (`origin: adapted`) is adapted from the `tlc-plan` and
+The `spec-writing` skill in `defaults/skills/spec-writing/` (`metadata.origin: adapted`) is adapted from the `tlc-plan` and
 `tlc-spec-driven` skills of [Tech Leads Club agent-skills](https://github.com/tech-leads-club/agent-skills)
 (Creative Commons Attribution 4.0, https://creativecommons.org/licenses/by/4.0/) and from the question protocol and
 ADR template of compozy's `cy-create-spec` skill ([compozy](https://github.com/compozy/compozy), MIT, Copyright (c) 2026

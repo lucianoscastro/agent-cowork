@@ -349,8 +349,10 @@ test('auditor: critical and high findings go to the inbox; the report carries co
 test('developer limits saved before follow-ups and spec tasks existed get their defaults', () => {
   const dev = read('agents.developer');
   const { followUp: _, taskMinutes: __, ...older } = dev.limits;
-  putSetting('agents.developer', { ...dev, limits: older });
-  assert.deepEqual([read('agents.developer').limits.followUp, read('agents.developer').limits.taskMinutes], [3, 20]);
+  const { browserCheck: ___, ...olderDev } = dev;
+  putSetting('agents.developer', { ...olderDev, limits: older });
+  assert.deepEqual([read('agents.developer').limits.followUp, read('agents.developer').limits.taskMinutes, read('agents.developer').browserCheck], [3, 20, true]);
+  assert.throws(() => write('agents.developer', { ...dev, browserCheck: undefined } as never), /browserCheck/);
   assert.throws(() => write('agents.developer', { ...dev, limits: { ...dev.limits, taskMinutes: 500 } }), /taskMinutes/);
 });
 
@@ -1266,6 +1268,30 @@ test('developer: a stopped spec build resumes after the tasks it verified, while
   await clearCheckpoints(repos, 'ABC-1');
   assert.equal(await git('for-each-ref', 'refs/agentcowork/'), '');
   assert.equal(await resumeBuild(repos, refs), 0);
+});
+
+test('browser tools: headless and isolated, started in the evidence folder, with the caller\'s limits', async () => {
+  const { playwrightConfig } = await import('../src/providers/browser.ts');
+  const config = JSON.parse(playwrightConfig("/logs/run 7/build-T1-browser's", ['--allowed-origins', 'http://localhost:*;http://127.0.0.1:*']));
+  const { command, args } = config.mcpServers.playwright;
+  assert.equal(command, 'sh');
+  assert.equal(args[0], '-c');
+  assert.match(args[1], /^cd '\/logs\/run 7\/build-T1-browser'\\''s' && exec node '\/usr\/local\/lib\/playwright-mcp\/cli\.js' '--headless' '--isolated'/);
+  assert.match(args[1], / '--allowed-origins' 'http:\/\/localhost:\*;http:\/\/127\.0\.0\.1:\*'$/);
+});
+
+test('a runtime call leaves nothing running: what it started dies with it', async () => {
+  const { spawnStream } = await import('../src/providers/process.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'spawn-'));
+  // A background child that keeps the output open would hang the call, and outlive it, without the group kill.
+  const signal = new AbortController().signal;
+  const started = Date.now();
+  const out = await spawnStream('sh', ['-c', 'sleep 30 & echo $!'], { cwd: dir, env: process.env, signal, transcript: join(dir, 't.jsonl') });
+  assert.ok(Date.now() - started < 10_000, 'the call waited for its background child');
+  const pid = Number(out.stdout.trim());
+  assert.ok(pid > 0);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
 });
 
 test('runs: the time limit moves later once the run knows how much work it holds', async () => {

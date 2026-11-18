@@ -185,6 +185,7 @@ export type Sections = {
     lead: ModelChoice;
     coderModel: string;
     testerModel: string;
+    browserCheck: boolean;
     reviewer: ModelChoice & { enabled: boolean };
     secondReviewer: ModelChoice & { enabled: boolean };
     limits: { planReview: number; verify: number; diffReview: number; runMinutes: number; taskMinutes: number; followUp: number };

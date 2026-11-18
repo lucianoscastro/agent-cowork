@@ -9,6 +9,7 @@ import { env } from '../env.ts';
 import { gh, ghJson } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
 import { brainContext, learning } from '../brain.ts';
+import { playwrightConfig } from '../providers/browser.ts';
 import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
 import { checkout, log, maskSecrets, REDACTED, removeCheckout, renderPrompt, withLock } from '../sh.ts';
@@ -19,8 +20,6 @@ import { takeForce } from './status.ts';
 const SUITE_TIMEOUT_MS = 4 * 60 * 60_000;
 const TEST_TIMEOUT_MS = 20 * 60_000;
 const MAX_ATTACHMENT_BYTES = 9 * 1024 * 1024;
-const MCP_CLI = '/usr/local/lib/playwright-mcp/cli.js';
-const BROWSER = '/usr/bin/chromium';
 
 // --- test source for the model ---
 
@@ -578,15 +577,8 @@ function prepareBrowser(ctx: Context, label: string): { config: string; outDir: 
   writeFileSync(browserConfig, JSON.stringify({ browser: { contextOptions: { recordHar: { path: join(outDir, 'session.har'), content: 'omit' } } } }));
   const config = join(tmpdir(), `sentinel-${ctx.run.id}-${label}-mcp.json`);
   const origin = new URL(ctx.baseUrl).origin;
-  const args = [
-    MCP_CLI, '--headless', '--isolated', '--no-sandbox', '--executable-path', BROWSER, '--ignore-roots',
-    '--output-dir', outDir, '--allowed-origins', origin, '--secrets', secretsFile, '--config', browserConfig,
-    '--console-level', 'warning', '--viewport-size', '1440x900',
-  ];
-  // Started inside the evidence folder: screenshots the model names land there, never in the checkout
-  // (where the read-only guard would drop them).
-  const quote = (a: string) => `'${a.replace(/'/g, `'\\''`)}'`;
-  writeFileSync(config, JSON.stringify({ mcpServers: { playwright: { command: 'sh', args: ['-c', `cd ${quote(outDir)} && exec node ${args.map(quote).join(' ')}`] } } }));
+  const args = ['--allowed-origins', origin, '--secrets', secretsFile, '--config', browserConfig, '--console-level', 'warning', '--viewport-size', '1440x900'];
+  writeFileSync(config, playwrightConfig(outDir, args));
   return { config, outDir, secretNames: Object.keys(secrets) };
 }
 

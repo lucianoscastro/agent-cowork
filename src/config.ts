@@ -158,6 +158,8 @@ export type Settings = {
     lead: ModelChoice;
     coderModel: string;
     testerModel: string;
+    // A Claude lead building a project with a React repository gets a headless browser that reaches only localhost.
+    browserCheck: boolean;
     // Independent reviewers of the plan and the diff: none, one or both; with both, each must approve.
     reviewer: Reviewer;
     secondReviewer: Reviewer;
@@ -253,6 +255,7 @@ export const DEFAULTS: Settings = {
     lead: { provider: 'claude', model: 'opus' },
     coderModel: 'sonnet',
     testerModel: 'sonnet',
+    browserCheck: true,
     reviewer: { enabled: true, provider: 'codex', model: '' },
     secondReviewer: { enabled: false, provider: 'agy', model: '' },
     limits: { planReview: 2, verify: 3, diffReview: 3, runMinutes: 90, taskMinutes: 20, followUp: 3 },
@@ -630,6 +633,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           lead: choice(o.lead, `${key}.lead`),
           coderModel: str(o, 'coderModel', key, { max: 200 }),
           testerModel: str(o, 'testerModel', key, { max: 200 }),
+          browserCheck: bool(o, 'browserCheck', key),
           reviewer: reviewer(o.reviewer, `${key}.reviewer`),
           secondReviewer: reviewer(o.secondReviewer, `${key}.secondReviewer`),
           limits: {

@@ -181,6 +181,7 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
               <ModelInput provider={developer.lead.provider} value={developer.testerModel} onChange={(testerModel) => setDeveloper({ ...developer, testerModel })} />
             </Field>
           </div>
+          <Toggle checked={developer.browserCheck} onChange={(browserCheck) => setDeveloper({ ...developer, browserCheck })} label="Check UI changes in a headless browser on localhost (Claude lead, projects with a React repository)" />
           <p className="small muted">{t('Independent reviewers of the plan and the diff: none, one or both. With both, they review in parallel and each must approve.')}</p>
           <Toggle checked={developer.reviewer.enabled} onChange={(enabled) => setDeveloper({ ...developer, reviewer: { ...developer.reviewer, enabled } })} label="First reviewer" />
           {developer.reviewer.enabled && (

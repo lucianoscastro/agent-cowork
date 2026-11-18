@@ -27,6 +27,8 @@ export type ProviderRequest = {
   subagents?: Record<string, Subagent>;
   /** An MCP config file giving the model browser tools (Playwright MCP); Claude only. */
   browser?: string;
+  /** Browser tools the call can do without: given on Claude, left out on a provider it falls back to. */
+  browserIfClaude?: string;
   /** The platform's own tools (the project's databases) for this call; runtimes that cannot reach them work without. */
   tools?: ToolServer;
   /** Providers to fall back to only after the others, e.g. the other reviewer's, to keep reviews independent. */
@@ -171,6 +173,7 @@ async function callProvider<T>(id: ProviderId, req: ProviderRequest): Promise<Pr
   const model = req.model || defaultModel(id) || undefined;
   req.run.event('info', `${req.label}: ${id}${model ? ` (${model})` : ''}, ${req.mode}`);
   if (req.browser && id !== 'claude') throw new Error(`${req.label}: browser tools need Claude Code`);
+  if (!req.browser && id === 'claude' && req.browserIfClaude) req = { ...req, browser: req.browserIfClaude };
   const call = () =>
     id === 'claude' ? runClaude<T>({ ...req, model }) : id === 'codex' ? runCodex<T>({ ...req, model }) : runAgy<T>({ ...req, model });
   const guarded = () => (req.mode === 'read-only' ? guardReadOnly(req.run, req.label, req.cwd, call) : call());

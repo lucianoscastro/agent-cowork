@@ -55,6 +55,8 @@ const translations = {
     'Coder subagent model': 'Modelo do subagente coder',
     'Tester subagent model': 'Modelo do subagente tester',
     'Claude lead only.': 'Só com lead Claude.',
+    'Check UI changes in a headless browser on localhost (Claude lead, projects with a React repository)':
+      'Conferir mudanças de UI num navegador headless em localhost (lead Claude, projetos com repositório React)',
     'Independent reviewers of the plan and the diff: none, one or both. With both, they review in parallel and each must approve.':
       'Revisores independentes do plano e do diff: nenhum, um ou os dois. Com os dois, revisam em paralelo e cada um precisa aprovar.',
     'First reviewer': 'Primeiro revisor',
@@ -206,6 +208,8 @@ const translations = {
     'Coder subagent model': 'Modelo del subagente coder',
     'Tester subagent model': 'Modelo del subagente tester',
     'Claude lead only.': 'Solo con lead Claude.',
+    'Check UI changes in a headless browser on localhost (Claude lead, projects with a React repository)':
+      'Comprobar los cambios de UI en un navegador headless en localhost (lead Claude, proyectos con un repositorio React)',
     'Independent reviewers of the plan and the diff: none, one or both. With both, they review in parallel and each must approve.':
       'Revisores independientes del plan y del diff: ninguno, uno o ambos. Con ambos, revisan en paralelo y cada uno debe aprobar.',
     'First reviewer': 'Primer revisor',
