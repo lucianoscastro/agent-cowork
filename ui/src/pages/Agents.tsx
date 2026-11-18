@@ -45,9 +45,9 @@ function SaveRow({ action, onSave }: { action: ReturnType<typeof useAction>; onS
 
 const DESCRIPTIONS: Record<AgentId, string> = {
   pm:
-    "Picks cards with the trigger label (agent-spec by default) from each project's Jira board and writes their spec documents: spec.md (the problem and the acceptance criteria), tasks.md, and design.md and ADRs when needed. Gray areas are asked on the card first, in one batch of numbered questions; the run resumes when someone answers. The independent reviewers check the documents (one or two, as in the Developer), then they are attached to the card and the card goes straight to the Developer: the trigger label is swapped for agent-ready. To change a spec, comment what to change and put the label back; the Developer sends the card back itself when something in the spec does not hold. It never writes code and never changes priority or estimates.",
+    "Picks cards with the trigger label (agent-spec by default) from each project's Jira board and writes their spec documents: spec.md (the problem and the acceptance criteria), tasks.md, and design.md and ADRs when needed. Gray areas are asked on the card first, in one batch of numbered questions; the run resumes when someone answers. The independent reviewers check the documents (one or two, as in the Developer), then they are attached to the card, each task becomes a sub-task, and the card goes straight to the Developer: the trigger label is swapped for agent-ready. To change a spec, comment what to change and put the label back; the Developer sends the card back itself when something in the spec does not hold. It never writes code and never changes priority or estimates.",
   developer:
-    "Picks agent-ready cards from each project's Jira board, plans with the lead, has the reviewer check the plan and the diff, verifies with the repository commands (and, for a card with a spec, that every acceptance criterion has its test) and opens a PR per changed repository. Then it follows each PR until it is merged or closed: it answers every review comment (fixing it, or declining it with a justification) and keeps the pipeline green, including quality gates such as SonarQube. Merging stays with humans.",
+    "Picks agent-ready cards from each project's Jira board, plans with the lead, has the reviewer check the plan and the diff, verifies with the repository commands (and, for a card with a spec, builds and verifies one task at a time, moving its sub-task, and checks that every acceptance criterion has its test) and opens a PR per changed repository. Then it follows each PR until it is merged or closed: it answers every review comment (fixing it, or declining it with a justification) and keeps the pipeline green, including quality gates such as SonarQube. Merging stays with humans.",
   approver:
     "Reviews open PRs that request review directly from the GitHub user of this instance. Approves when there is nothing to suggest; otherwise comments inline.",
   dependabot:
@@ -102,6 +102,7 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
               <Num value={pm.concurrency} min={1} max={4} onChange={(concurrency) => setPm({ ...pm, concurrency })} />
             </Field>
           </div>
+          <Toggle checked={pm.subtasks} onChange={(subtasks) => setPm({ ...pm, subtasks })} label="A Jira sub-task per task (T1: …), moved by the Developer as it builds each one" />
           <h3>{t('Team')}</h3>
           <p className="small muted">{t('Lead')}</p>
           <ModelPicker value={pm.lead} onChange={(lead) => setPm({ ...pm, lead })} settings={settings} />

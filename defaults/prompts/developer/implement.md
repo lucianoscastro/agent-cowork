@@ -31,6 +31,8 @@ Resolve Jira issue {{key}} of the project "{{project}}": "{{summary}}". Fix the 
 
 {{spec}}
 
+{{task}}
+
 {{brain}}
 
 {{databases}}

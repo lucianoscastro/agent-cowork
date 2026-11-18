@@ -24,6 +24,8 @@ Make your change for Jira issue {{key}} of the project "{{project}}" ("{{summary
 
 {{spec}}
 
+{{task}}
+
 {{brain}}
 
 {{databases}}

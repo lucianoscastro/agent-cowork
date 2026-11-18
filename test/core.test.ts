@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
-import { parseChecks, reviewPasses, specBrief, unproven, validPromotion } from '../src/agents/developer.ts';
-import { save as saveSpec } from '../src/agents/pm.ts';
+import { fromSpec, parseChecks, parseTasks, reviewPasses, specBrief, taskBrief, unproven, validPromotion } from '../src/agents/developer.ts';
+import { planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
@@ -1096,6 +1096,10 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.deepEqual([pm.reviewer.enabled, pm.secondReviewer.enabled], [true, false]);
   assert.equal(write('agents.pm', { ...pm, secondReviewer: { ...pm.secondReviewer, enabled: true } }).secondReviewer.enabled, true);
   assert.throws(() => write('agents.pm', { ...pm, secondReviewer: { provider: 'agy', model: '' } }), /secondReviewer/);
+  // A sub-task per task is on until switched off.
+  assert.equal(pm.subtasks, true);
+  assert.equal(write('agents.pm', { ...pm, subtasks: false }).subtasks, false);
+  assert.throws(() => write('agents.pm', { ...pm, subtasks: undefined } as never), /subtasks/);
 
   // Attachments are saved under their own name: never a path.
   for (const ok of ['spec.md', 'tasks.md', 'ADR-01-orders-export-format.md', 'Notes (v2).md']) assert.equal(markdownName(ok), true, ok);
@@ -1168,4 +1172,47 @@ test('developer: the spec gate finds the tests the checks table names in the cha
   assert.deepEqual(unproven(checks, changed), ['AC2: `web/src/Export.test.tsx` has no case "shows the Export button"']);
   changed[2].text = "test('shows the Export button')";
   assert.deepEqual(unproven(checks, changed), []);
+});
+
+test('developer: a spec is built one task at a time, and each task keeps one sub-task on the card', () => {
+  const tasksMd = [
+    '# ABC-123: Export - Tasks',
+    '## Tasks',
+    '### T1: Range validation',
+    '- **Depends on**: none',
+    '- **Test**: unit, `src/orders/range.test.ts`: "rejects a 32-day range"',
+    '### **T2** - CSV `writer`',
+    '1. T7 a numbered line inside a task is not a task',
+    '### T1: a repeated id keeps its first entry',
+    '### T4: Export button',
+    '## Checks',
+    '### T9: after the section',
+  ].join('\n');
+  assert.deepEqual(parseTasks(tasksMd), [
+    { id: 'T1', title: 'Range validation' },
+    { id: 'T2', title: 'CSV writer' },
+    { id: 'T4', title: 'Export button' },
+  ]);
+  // A small change keeps its tasks in spec.md, as a numbered list: the deliverable ends at the first spaced dash.
+  const small = '# spec\n\n## Tasks\n\n1. **T1** Reject long ranges - `api`: `src/range.ts` (modify) - test: `src/range.test.ts`: "x" - covers AC1\n2. **T2** Show the error - `web`: `src/Range.tsx` (modify)\n\n## Checks\n';
+  assert.deepEqual(parseTasks(small), [{ id: 'T1', title: 'Reject long ranges' }, { id: 'T2', title: 'Show the error' }]);
+  // tasks.md first, spec.md for a small change; never without the Product Manager's spec.md.
+  assert.deepEqual(fromSpec(new Map([['spec.md', small], ['tasks.md', tasksMd]]), parseTasks).map((t) => t.id), ['T1', 'T2', 'T4']);
+  assert.deepEqual(fromSpec(new Map([['spec.md', small]]), parseTasks).map((t) => t.id), ['T1', 'T2']);
+  assert.deepEqual(fromSpec(new Map([['tasks.md', tasksMd]]), parseTasks), []);
+
+  // Each build call is told its task and where the others stand.
+  const tasks = parseTasks(tasksMd);
+  const brief = taskBrief(tasks[1], tasks);
+  assert.match(brief, /Build only task T2 \("CSV writer"\)/);
+  assert.match(brief, /T1 is built and committed/);
+  assert.match(brief, /Leave T4 to the calls that follow/);
+  assert.doesNotMatch(taskBrief(tasks[0], tasks), /built and committed/);
+
+  // The sub-tasks follow each version: new tasks get one, a changed title is renamed, a dropped task closes its own
+  // (unless already done), and a sub-task people made (no task id) is left alone.
+  const sub = (key: string, summary: string, status = 'new') => ({ key, fields: { summary, status: { statusCategory: { key: status } } } });
+  const plan = planSubtasks(tasks, [sub('ABC-200', 'T1: Range validation', 'done'), sub('ABC-201', 'T2: CSV'), sub('ABC-202', 'T3: Dropped'), sub('ABC-203', 'T5: Done and dropped', 'done'), sub('ABC-204', 'Write the release notes')]);
+  assert.deepEqual(plan, { create: [{ id: 'T4', title: 'Export button' }], rename: [{ key: 'ABC-201', summary: 'T2: CSV writer' }], close: ['ABC-202'] });
+  assert.deepEqual(planSubtasks([], []), { create: [], rename: [], close: [] });
 });

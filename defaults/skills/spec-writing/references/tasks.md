@@ -1,6 +1,8 @@
 # tasks.md
 
-The order the Developer builds in. It reads `tasks.md` top to bottom with `spec.md` open beside it. Its platform commits the whole change once and runs each repository's must-pass commands (build, lint, tests), so a task carries no commit, gate, proof command or approval line: it carries the change, what it waits on, and the test that proves it.
+The order the Developer builds in, one task per call, with `spec.md` open beside it. After each task the platform commits it, runs each repository's must-pass commands (build, lint, tests) and checks that the tests its `## Checks` rows name are in the change, before the next task starts. So a task carries no commit, gate, proof command or approval line: it carries the change, what it waits on, and the test that proves it.
+
+Each task also becomes a Jira sub-task of the card, named by its heading (`T1: <the deliverable>`): keep that line under 80 characters.
 
 Skip this file for Small (<=3 obvious steps): `spec.md` then ends with a `## Tasks` list and `## Checks` (below).
 
@@ -32,6 +34,8 @@ Two or three related changes in one file are fine when cohesive; several compone
 
 **Tests live in the task that creates the code.** Never a later "write the tests" task. When code cannot be tested until a later task lands (an endpoint that needs its route registered), merge the two, forward or backward: no task leaves unproven code. `Test: none - <why>` only for a task with no behaviour of its own (a type, a config entry, a dependency bump), and the reason says which test exercises it.
 
+**Each task leaves the build green on its own**: the must-pass commands run after every task, so a task never depends on a later one to compile, lint or pass its tests.
+
 **Order by dependency**: stored data and contracts first, then the rules, then the surfaces that show them. In a multi-repository change, the repository that produces a contract comes before the one that consumes it. A task never depends on a later one, and no task depends on an open question.
 
 **Ids are stable**: `T1`..`Tn`, never renumbered on a revision; a new task takes the next number and a dropped one leaves a gap. The list order is the build order.
@@ -40,6 +44,7 @@ Two or three related changes in one file are fine when cohesive; several compone
 
 One row per criterion, every criterion: `| Criterion | Proven by | Task |`. The test named is the one the task wrote, by file and case.
 
+- The `Task` column names the task that writes the test: the platform checks the row when that task is built (and every row after the last one).
 - A suite going green settles no single criterion: name the case.
 - One test may prove several criteria; one criterion may need two tests (the rule, and the screen that shows it). Every criterion has at least one.
 - A criterion no automated test can settle is not ready: go back to `spec.md` and rewrite it until one can.

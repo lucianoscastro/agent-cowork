@@ -13,9 +13,11 @@ export type Issue = {
     comment: { comments: Comment[] };
     status: { name: string; statusCategory: { key: string } };
     labels: string[];
+    subtasks?: Subtask[];
   };
 };
-type Transition = { id: string; name: string; to: { name: string } };
+export type Subtask = { key: string; fields: { summary: string; status: { statusCategory: { key: string } } } };
+type Transition = { id: string; name: string; to: { name: string; statusCategory?: { key: string } } };
 
 // Prefixes the agent's own comments: it may share the Jira account of the human who answers.
 export const BOT_MARK = '🤖';
@@ -69,16 +71,17 @@ async function api<T>(path: string, init: { method?: string; body?: unknown } = 
 
 /** Keys of the cards on the configured board that match the JQL. */
 export async function searchBoard(boardId: string, jql: string): Promise<string[]> {
-  const query = `jql=${encodeURIComponent(jql)}&fields=summary&maxResults=20`;
-  const { issues } = await api<{ issues: { key: string }[] }>(`agile/1.0/board/${boardId}/issue?${query}`);
-  return issues.map((i) => i.key);
+  const query = `jql=${encodeURIComponent(jql)}&fields=issuetype&maxResults=20`;
+  const { issues } = await api<{ issues: { key: string; fields?: { issuetype?: { subtask?: boolean } } }[] }>(`agile/1.0/board/${boardId}/issue?${query}`);
+  // A sub-task is a step of its card (the Product Manager's tasks), never a card of its own, whatever the JQL.
+  return issues.filter((i) => !i.fields?.issuetype?.subtask).map((i) => i.key);
 }
 
 /** Jira answers 404 for a deleted card, and for one this account can no longer see. */
 export const missing = (err: unknown) => /: 404 /.test((err as Error).message);
 
 export function getIssue(key: string): Promise<Issue> {
-  return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status,labels`);
+  return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status,labels,subtasks`);
 }
 
 /** Takes labels off a card and puts others on, in one update (a label already in that state is a no-op). */
@@ -130,11 +133,18 @@ export async function saveMarkdownAttachments(key: string, dir: string): Promise
 }
 
 /** Accepts either the transition name or its target status name, case-insensitively. */
-export async function transition(key: string, name: string): Promise<void> {
-  const { transitions } = await api<{ transitions: Transition[] }>(`api/3/issue/${key}/transitions`);
+export function transition(key: string, name: string): Promise<void> {
   const wanted = name.toLowerCase();
-  const match = transitions.find((t) => t.name.toLowerCase() === wanted || t.to.name.toLowerCase() === wanted);
-  if (!match) throw new Error(`${key}: no transition "${name}" (available: ${transitions.map((t) => t.name).join(', ')})`);
+  return transitionBy(key, `"${name}"`, (t) => t.name.toLowerCase() === wanted || t.to.name.toLowerCase() === wanted);
+}
+
+/** Moves an issue to the first status of a category (`indeterminate`: in progress, `done`), whatever the workflow names it. */
+export const moveTo = (key: string, category: 'indeterminate' | 'done') => transitionBy(key, `to a ${category} status`, (t) => t.to.statusCategory?.key === category);
+
+async function transitionBy(key: string, what: string, pick: (t: Transition) => boolean): Promise<void> {
+  const { transitions } = await api<{ transitions: Transition[] }>(`api/3/issue/${key}/transitions`);
+  const match = transitions.find(pick);
+  if (!match) throw new Error(`${key}: no transition ${what} (available: ${transitions.map((t) => t.name).join(', ')})`);
   await api(`api/3/issue/${key}/transitions`, { method: 'POST', body: { transition: { id: match.id } } });
 }
 
@@ -169,13 +179,23 @@ export async function boardProject(boardId: string): Promise<string> {
   return values[0].key;
 }
 
-/** Creates a card and returns its key. */
-export async function createIssue(projectKey: string, issueType: string, summary: string, description: DocBlock[], labels: string[]): Promise<string> {
+/** Creates a card (a sub-task of `parent`, when given) and returns its key. */
+export async function createIssue(projectKey: string, issueType: string, summary: string, description: DocBlock[], labels: string[], parent?: string): Promise<string> {
   const { key } = await api<{ key: string }>('api/3/issue', {
     method: 'POST',
-    body: { fields: { project: { key: projectKey }, issuetype: { name: issueType }, summary: summary.slice(0, 250), description: toAdf(description), labels } },
+    body: { fields: { project: { key: projectKey }, issuetype: { name: issueType }, summary: summary.slice(0, 250), description: toAdf(description), labels, ...(parent && { parent: { key: parent } }) } },
   });
   return key;
+}
+
+/** The name of the project's sub-task issue type, when it has one (the name differs per site and language). */
+export async function subtaskType(projectKey: string): Promise<string | undefined> {
+  const { issueTypes } = await api<{ issueTypes: { name: string; subtask: boolean }[] }>(`api/3/project/${projectKey}`);
+  return issueTypes.find((t) => t.subtask)?.name;
+}
+
+export async function setSummary(key: string, summary: string): Promise<void> {
+  await api(`api/3/issue/${key}`, { method: 'PUT', body: { fields: { summary: summary.slice(0, 250) } } });
 }
 
 /** Keys and summaries of the issues matching a JQL query (at most 20). */

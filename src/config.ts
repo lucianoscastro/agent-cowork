@@ -140,6 +140,8 @@ export type Settings = {
     // Independent reviewers of the documents, as in the Developer: none, one or both; with both, each must approve.
     reviewer: Reviewer;
     secondReviewer: Reviewer;
+    // One Jira sub-task per task of tasks.md, moved by the Developer as it builds each one.
+    subtasks: boolean;
     limits: { specReview: number; runMinutes: number };
     concurrency: number;
   };
@@ -233,6 +235,7 @@ export const DEFAULTS: Settings = {
     lead: { provider: 'claude', model: 'opus' },
     reviewer: { enabled: true, provider: 'codex', model: '' },
     secondReviewer: { enabled: false, provider: 'agy', model: '' },
+    subtasks: true,
     limits: { specReview: 2, runMinutes: 60 },
     concurrency: 1,
   },
@@ -577,6 +580,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           lead: choice(o.lead, `${key}.lead`),
           reviewer: reviewer(o.reviewer, `${key}.reviewer`),
           secondReviewer: reviewer(o.secondReviewer, `${key}.secondReviewer`),
+          subtasks: bool(o, 'subtasks', key),
           limits: { specReview: int(limits, 'specReview', `${key}.limits`, 0, 10), runMinutes: int(limits, 'runMinutes', `${key}.limits`, 5, 600) },
           concurrency: int(o, 'concurrency', key, 1, 4),
         };

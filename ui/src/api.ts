@@ -169,6 +169,7 @@ export type Sections = {
     lead: ModelChoice;
     reviewer: ModelChoice & { enabled: boolean };
     secondReviewer: ModelChoice & { enabled: boolean };
+    subtasks: boolean;
     limits: { specReview: number; runMinutes: number };
     concurrency: number;
   };

@@ -11,7 +11,7 @@ import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
 import { wake } from '../scheduler.ts';
 import { type Checkout, checkout, forEachLimit, log, removeCheckout, renderPrompt } from '../sh.ts';
-import { type Finding, formatFindings, reviewPanel, reviewPasses } from './developer.ts';
+import { type Finding, formatFindings, fromSpec, parseTasks, reviewPanel, reviewPasses, subtaskSummary, subtasksById, type Task } from './developer.ts';
 import { takeForce } from './status.ts';
 
 const { BOT_MARK } = jira;
@@ -172,8 +172,11 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     for (const [name, text] of after) if (name.startsWith('ADR-') && before.get(name) !== text) signals.push(`Decision recorded for ${key} (${name}):\n${text.slice(0, 2000)}`);
     const ready = readyLabel();
     const notes = findings.length ? `\n\n${passed ? 'Reviewer notes' : 'Reviewer findings still open'}:\n${formatFindings(findings)}` : '';
-    if (dryRun) return { status: 'done', summary: `would attach ${changed ? docs.join(', ') : 'nothing (unchanged)'} to ${key} and hand it to the Developer: ${spec.title}\n\n${spec.summary}${notes}` };
+    const tasks = fromSpec(after, parseTasks);
+    if (dryRun) return { status: 'done', summary: `would attach ${changed ? docs.join(', ') : 'nothing (unchanged)'} to ${key}${cfg.subtasks && tasks.length ? `, keep a sub-task for each of its ${tasks.length} tasks` : ''} and hand it to the Developer: ${spec.title}\n\n${spec.summary}${notes}` };
     if (changed) await jira.attach(key, [...after].map(([name, text]) => ({ name, type: 'text/markdown', data: Buffer.from(text) })));
+    // The sub-tasks only mirror the tasks: the hand-off goes on without them when Jira refuses.
+    if (cfg.subtasks) await syncSubtasks(run, key, tasks).catch((err) => run.event('warn', 'The sub-tasks were not updated', (err as Error).message));
     await jira.comment(key, `${BOT_MARK} Spec documents ${changed ? 'attached' : 'unchanged'}: ${docs.join(', ')}\n\n${spec.summary}${notes}\n\nHanded to the Developer (label ${ready}). To change the spec, comment what to change and put the label ${cfg.label} back.`);
     await jira.relabel(key, [cfg.label], [ready]);
     // Straight to the Developer: its next poll starts now instead of after the interval.
@@ -182,6 +185,44 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
   } finally {
     for (const r of repos) await removeCheckout(r).catch(() => {});
     await rm(workspace, { recursive: true, force: true });
+  }
+}
+
+/** What the card's sub-tasks need for this version's tasks: one per task, found by its id. Exported for tests. */
+export function planSubtasks(tasks: Task[], subtasks: jira.Subtask[]): { create: Task[]; rename: { key: string; summary: string }[]; close: string[] } {
+  const byId = subtasksById(subtasks);
+  const ids = new Set(tasks.map((t) => t.id));
+  return {
+    create: tasks.filter((t) => !byId.has(t.id)),
+    rename: tasks.flatMap((t) => {
+      const s = byId.get(t.id);
+      return s && s.fields.summary !== subtaskSummary(t) ? [{ key: s.key, summary: subtaskSummary(t) }] : [];
+    }),
+    // A task the new version dropped closes its sub-task (an open one may hold the card back from Done).
+    close: [...byId].filter(([id, s]) => !ids.has(id) && s.fields.status.statusCategory.key !== 'done').map(([, s]) => s.key),
+  };
+}
+
+/** Keeps one sub-task per task on the card, named `Tn: <deliverable>`; the Developer moves each as it builds it. */
+async function syncSubtasks(run: Run, key: string, tasks: Task[]): Promise<void> {
+  // A version whose tasks did not parse would close every sub-task: it leaves them as they are instead.
+  if (!tasks.length) return run.event('warn', 'No tasks found in the documents: the sub-tasks were left as they are');
+  const { create, rename, close } = planSubtasks(tasks, (await jira.getIssue(key)).fields.subtasks ?? []);
+  const project = key.split('-')[0];
+  const type = create.length ? await jira.subtaskType(project) : undefined;
+  if (create.length && !type) run.event('warn', `Project ${project} has no sub-task issue type: no sub-task was created`);
+  const created: string[] = [];
+  for (const t of type ? create : []) {
+    const description = [{ text: `${BOT_MARK} Task ${t.id} of the spec attached to ${key} (tasks.md, or spec.md for a small change). The Developer builds it and moves this sub-task. To change it, change the spec: comment on ${key} and put the label ${read('agents.pm').label} back.` }];
+    created.push(await jira.createIssue(project, type!, subtaskSummary(t), description, [], key));
+  }
+  for (const r of rename) await jira.setSummary(r.key, r.summary);
+  for (const k of close) {
+    await jira.comment(k, `${BOT_MARK} The new version of the spec dropped this task.`);
+    await jira.moveTo(k, 'done');
+  }
+  if (created.length || rename.length || close.length) {
+    run.event('artifact', 'Sub-tasks', [created.length && `created ${created.join(', ')}`, rename.length && `renamed ${rename.map((r) => r.key).join(', ')}`, close.length && `closed ${close.join(', ')}`].filter(Boolean).join('; '));
   }
 }
 
