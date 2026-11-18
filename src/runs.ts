@@ -17,10 +17,13 @@ const now = () => new Date().toISOString();
 export class Run {
   readonly id: number;
   readonly signal: AbortSignal;
+  /** Moves the run's time limit later by `ms`, once the run knows how much work it holds (a no-op without a limit). */
+  readonly extend: (ms: number) => void;
 
-  constructor(id: number, signal: AbortSignal) {
+  constructor(id: number, signal: AbortSignal, extend: (ms: number) => void = () => {}) {
     this.id = id;
     this.signal = signal;
+    this.extend = extend;
   }
 
   get logDir(): string {
@@ -59,8 +62,21 @@ export async function withRun(meta: RunMeta, fn: (run: Run) => Promise<RunEnd>):
     .run(meta.agent, meta.item, meta.url ?? null, meta.title ?? null, 'running', meta.dryRun ? 1 : 0, now());
   const id = Number(lastInsertRowid);
   active.set(id, { agent: meta.agent, controller });
-  const signal = meta.timeoutMs ? AbortSignal.any([controller.signal, AbortSignal.timeout(meta.timeoutMs)]) : controller.signal;
-  const run = new Run(id, signal);
+  // The time limit is a timer the run can push back (Run.extend), not a fixed AbortSignal.timeout.
+  const limit = new AbortController();
+  let deadline = Date.now() + (meta.timeoutMs ?? 0);
+  let timer: NodeJS.Timeout | undefined;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => limit.abort(new DOMException('run time limit reached', 'TimeoutError')), deadline - Date.now());
+  };
+  if (meta.timeoutMs) arm();
+  const signal = meta.timeoutMs ? AbortSignal.any([controller.signal, limit.signal]) : controller.signal;
+  const run = new Run(id, signal, (ms) => {
+    if (!meta.timeoutMs || limit.signal.aborted) return;
+    deadline += ms;
+    arm();
+  });
   // Agents write reports and evidence here before any transcript would have created it.
   mkdirSync(run.logDir, { recursive: true });
   let end: RunEnd;
@@ -73,6 +89,7 @@ export async function withRun(meta: RunMeta, fn: (run: Run) => Promise<RunEnd>):
     end = { status: killed ? 'killed' : 'failed', summary: killed ? KILLED : signal.aborted ? 'run time limit reached' : error };
     run.event('error', error);
   } finally {
+    clearTimeout(timer);
     active.delete(id);
   }
   sql()

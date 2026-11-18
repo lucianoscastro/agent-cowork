@@ -4,7 +4,7 @@ The order the Developer builds in, one task per call, with `spec.md` open beside
 
 Each task also becomes a Jira sub-task of the card, named by its heading (`T1: <the deliverable>`): keep that line under 80 characters.
 
-Skip this file for Small (<=3 obvious steps): `spec.md` then ends with a `## Tasks` list and `## Checks` (below).
+Skip this file for Small (<=3 obvious steps): `spec.md` then ends with a `## Tasks` list and `## Checks` (below), and the Developer builds those tasks in one call.
 
 ## Find the repository's tests first
 

@@ -206,6 +206,7 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
                 ['diffReview', 'Diff review rounds'],
                 ['followUp', 'Rounds on a red PR before asking a human'],
                 ['runMinutes', 'Max minutes per run'],
+                ['taskMinutes', 'Extra minutes per spec task'],
               ] as const
             ).map(([k, label]) => (
               <Field key={k} label={label}>

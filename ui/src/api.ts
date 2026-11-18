@@ -187,7 +187,7 @@ export type Sections = {
     testerModel: string;
     reviewer: ModelChoice & { enabled: boolean };
     secondReviewer: ModelChoice & { enabled: boolean };
-    limits: { planReview: number; verify: number; diffReview: number; runMinutes: number; followUp: number };
+    limits: { planReview: number; verify: number; diffReview: number; runMinutes: number; taskMinutes: number; followUp: number };
     concurrency: number;
   };
   projects: { items: Project[] };

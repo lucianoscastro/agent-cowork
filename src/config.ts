@@ -162,7 +162,8 @@ export type Settings = {
     reviewer: Reviewer;
     secondReviewer: Reviewer;
     // followUp: rounds on an open PR (red pipeline or new comments) without getting it green before a human is asked.
-    limits: { planReview: number; verify: number; diffReview: number; runMinutes: number; followUp: number };
+    // taskMinutes: added to runMinutes for each task of a spec built task by task.
+    limits: { planReview: number; verify: number; diffReview: number; runMinutes: number; taskMinutes: number; followUp: number };
     concurrency: number;
   };
   projects: { items: Project[] };
@@ -254,7 +255,7 @@ export const DEFAULTS: Settings = {
     testerModel: 'sonnet',
     reviewer: { enabled: true, provider: 'codex', model: '' },
     secondReviewer: { enabled: false, provider: 'agy', model: '' },
-    limits: { planReview: 2, verify: 3, diffReview: 3, runMinutes: 90, followUp: 3 },
+    limits: { planReview: 2, verify: 3, diffReview: 3, runMinutes: 90, taskMinutes: 20, followUp: 3 },
     concurrency: 1,
   },
   projects: { items: [] },
@@ -636,6 +637,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
             verify: int(limits, 'verify', `${key}.limits`, 1, 10),
             diffReview: int(limits, 'diffReview', `${key}.limits`, 0, 10),
             runMinutes: int(limits, 'runMinutes', `${key}.limits`, 5, 600),
+            taskMinutes: int(limits, 'taskMinutes', `${key}.limits`, 0, 120),
             followUp: int(limits, 'followUp', `${key}.limits`, 1, 10),
           },
           concurrency: int(o, 'concurrency', key, 1, 4),

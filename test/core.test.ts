@@ -346,11 +346,12 @@ test('auditor: critical and high findings go to the inbox; the report carries co
   assert.match(report, /\| C07 \| fail \|/);
 });
 
-test('developer limits saved before follow-ups existed get the follow-up default', () => {
+test('developer limits saved before follow-ups and spec tasks existed get their defaults', () => {
   const dev = read('agents.developer');
-  const { followUp: _, ...older } = dev.limits;
+  const { followUp: _, taskMinutes: __, ...older } = dev.limits;
   putSetting('agents.developer', { ...dev, limits: older });
-  assert.equal(read('agents.developer').limits.followUp, 3);
+  assert.deepEqual([read('agents.developer').limits.followUp, read('agents.developer').limits.taskMinutes], [3, 20]);
+  assert.throws(() => write('agents.developer', { ...dev, limits: { ...dev.limits, taskMinutes: 500 } }), /taskMinutes/);
 });
 
 test('live output: transcripts of every runtime become terminal lines', () => {
@@ -1215,6 +1216,19 @@ test('developer: a spec is built one task at a time, and each task keeps one sub
   const plan = planSubtasks(tasks, [sub('ABC-200', 'T1: Range validation', 'done'), sub('ABC-201', 'T2: CSV'), sub('ABC-202', 'T3: Dropped'), sub('ABC-203', 'T5: Done and dropped', 'done'), sub('ABC-204', 'Write the release notes')]);
   assert.deepEqual(plan, { create: [{ id: 'T4', title: 'Export button' }], rename: [{ key: 'ABC-201', summary: 'T2: CSV writer' }], close: ['ABC-202'] });
   assert.deepEqual(planSubtasks([], []), { create: [], rename: [], close: [] });
+});
+
+test('runs: the time limit moves later once the run knows how much work it holds', async () => {
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const end = await withRun({ agent: 'developer', item: 'ABC-1', dryRun: true, timeoutMs: 60 }, async (run) => {
+    run.extend(200);
+    await pause(120);
+    run.checkpoint(); // past the first limit, inside the extended one
+    await pause(200);
+    run.checkpoint();
+    return { status: 'done' };
+  });
+  assert.deepEqual([end.status, end.summary], ['failed', 'run time limit reached']);
 });
 
 test('product manager: the layout check finds what the platform cannot read in the documents', () => {
