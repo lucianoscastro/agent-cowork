@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
 import { checkpointRef, clearCheckpoints, fromSpec, parseChecks, parseTasks, resumeBuild, reviewPasses, saveCheckpoint, specBrief, taskBrief, taskFingerprints, unproven, validPromotion } from '../src/agents/developer.ts';
-import { approvalOf, lintSpec, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
+import { approvalOf, lintSpec, offline, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
@@ -1120,8 +1120,12 @@ test('product manager: settings, attachments, the documents it saves, the brief 
     at('spec.md', '2026-11-05T10:00:00.000+0000'),
     at('ADR-01-csv.md', '2026-11-05T10:00:01.000+0000'),
     at('run.sh', '2026-11-05T10:00:01.000+0000'),
+    at('mockup-old-flow.html', '2026-11-01T10:00:02.000+0000'),
+    at('mockup-orders-export.html', '2026-11-05T10:00:02.000+0000'),
+    at('page.html', '2026-11-05T10:00:02.000+0000'),
   ]);
-  assert.deepEqual(docs.map((d) => `${d.filename} ${d.created.slice(5, 10)}`), ['spec.md 11-05', 'ADR-01-csv.md 11-05', 'notes.md 11-01']);
+  // A prototype belongs to its version like the documents; any other HTML is never read.
+  assert.deepEqual(docs.map((d) => `${d.filename} ${d.created.slice(5, 10)}`), ['spec.md 11-05', 'ADR-01-csv.md 11-05', 'mockup-orders-export.html 11-05', 'notes.md 11-01']);
 
   // The lead returns the documents; the platform writes only names of the layout, and a dropped one goes.
   const folder = mkdtempSync(join(tmpdir(), 'acw-spec-'));
@@ -1131,6 +1135,30 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.deepEqual(readdirSync(folder).sort(), ['design.md', 'notes.md', 'spec.md']);
   await assert.rejects(saveSpec(undefined, folder, [{ name: 'tasks.md', content: 't' }]), /no spec.md/);
 
+  // A prototype only when people approve the documents, and only offline: the platform puts a policy that blocks every
+  // request right after the doctype (no comment or fake head can hide it), once, and refuses one that names a web
+  // address, even encoded, or is no whole document.
+  const page = '<!doctype html><html><head><title>Export</title></head><body><svg xmlns="http://www.w3.org/2000/svg"></svg><button>Export CSV</button></body></html>';
+  const sealed = offline(page)!;
+  assert.match(sealed, /^<!doctype html>\n<meta http-equiv="Content-Security-Policy" content="default-src 'none';[^"]*form-action 'none'[^"]*"><html><head><title>/);
+  assert.equal(offline(sealed), sealed);
+  const hidden = page.replace('<html>', `<!-- ${sealed.split('\n')[1]} --><html><!-- <head> -->`);
+  assert.match(offline(hidden)!, /^<!doctype html>\n<meta http-equiv="Content-Security-Policy"[^>]*><!-- <meta/);
+  for (const out of ['<img src="https://tracker.example/x.png">', '<a href="https&#58;//example.com">', '<a href="h&#x74;tp://example.com">', '<a href="https&colon;&sol;&sol;example.com">', '<a href="ht\ttps://example.com">']) {
+    assert.equal(offline(page.replace('<button>', `${out}<button>`)), undefined, out);
+  }
+  assert.ok(offline(page.replace('<button>', '<p>&#99999999; &#38;</p><button>')));
+  assert.equal(offline('<button>Export CSV</button>'), undefined);
+  const mockup = { name: 'mockup-orders-export.html', content: page };
+  assert.deepEqual(await saveSpec(undefined, folder, [{ name: 'spec.md', content: '# Spec' }, mockup]), []);
+  assert.deepEqual(readdirSync(folder).sort(), ['notes.md', 'spec.md']);
+  const refused = await saveSpec(undefined, folder, [{ name: 'spec.md', content: '# Spec' }, mockup, { name: 'mockup-cdn.html', content: page.replace('<button>', '<script src="https://cdn.example/x.js"></script><button>') }, { name: 'index.html', content: page }], true);
+  assert.deepEqual(readdirSync(folder).sort(), ['mockup-orders-export.html', 'notes.md', 'spec.md']);
+  assert.equal(readFileSync(join(folder, 'mockup-orders-export.html'), 'utf8'), sealed);
+  // A refused prototype goes back to the lead to fix; a file outside the layout is only ignored.
+  assert.equal(refused.length, 1);
+  assert.match(refused[0], /^`mockup-cdn.html` was dropped: .*no web address/);
+
   assert.equal(specBrief('spec', []), '');
   assert.match(specBrief('spec', ['notes.md']), /^## Card attachments[\s\S]*`spec\/notes.md`/);
   const brief = specBrief('spec', ['spec.md', 'tasks.md']);
@@ -1138,6 +1166,8 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.match(brief, /`spec\/spec.md`, `spec\/tasks.md`/);
   assert.match(brief, /Every acceptance criterion gets a test/);
   assert.match(brief, /the card goes back to the Product Manager/);
+  assert.doesNotMatch(brief, /prototype/);
+  assert.match(specBrief('spec', ['spec.md', 'mockup-orders-export.html']), /clickable prototype people approved[\s\S]*the criterion wins/);
 
   assert.equal(triggerLabel('labels = "agent-ready" AND statusCategory != Done'), 'agent-ready');
   assert.equal(triggerLabel('project = ABC AND labels in (build-me, other)'), 'build-me');

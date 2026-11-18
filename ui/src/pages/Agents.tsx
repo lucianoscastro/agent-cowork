@@ -103,7 +103,7 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
             </Field>
           </div>
           <Toggle checked={pm.subtasks} onChange={(subtasks) => setPm({ ...pm, subtasks })} label="A Jira sub-task per task (T1: …), moved by the Developer as it builds each one" />
-          <Toggle checked={pm.approval} onChange={(approval) => setPm({ ...pm, approval })} label='A person approves the spec on the card before it goes to the Developer (a comment with only "approved"; any other comment asks for a new version)' />
+          <Toggle checked={pm.approval} onChange={(approval) => setPm({ ...pm, approval })} label='A person approves the spec on the card before it goes to the Developer (a comment with only "approved"; any other comment asks for a new version). A card that changes a screen also gets a clickable HTML prototype' />
           <h3>{t('Team')}</h3>
           <p className="small muted">{t('Lead')}</p>
           <ModelPicker value={pm.lead} onChange={(lead) => setPm({ ...pm, lead })} settings={settings} />

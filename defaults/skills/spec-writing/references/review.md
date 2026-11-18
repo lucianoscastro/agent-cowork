@@ -20,6 +20,7 @@ The platform also checks the layout it reads before any review (the tasks, the c
 
 ### Criteria
 
+- When the change could make something worse for someone, the Problem says what must not, and each such line is a criterion with its value.
 - Each is one EARS sentence with SHALL and one requirement, numbered `AC<n>` across the spec.
 - Each is observable with a concrete value: a status code, a field, a bound, a label. Flag "gracefully", "quickly", "properly", "user-friendly", "as expected".
 - Each is testable in one run: no percentile, average or uptime.
@@ -32,7 +33,9 @@ The platform also checks the layout it reads before any review (the tasks, the c
 
 - No gray area is settled by an assumption: an `Assumptions` row that decides scope, product behaviour or a trade-off, with more than one defensible answer and nothing in the code settling it, should have been a question.
 - `Confirmed? y` only with a source that exists: a card answer (`card: Q2 b`) or a review comment. A `y` with no source, or citing a question nobody answered, is a blocker.
-- Open questions follow [questions.md](questions.md): plain text, numbered across the card's life, 2 to 4 options, exactly one recommended, no internal identifiers, nothing the code answers.
+- Open questions follow [questions.md](questions.md): plain text, after a few lines of what the writer understood, numbered across the card's life, 2 to 4 options with exactly one recommended (the why alone is asked open), no internal identifiers, nothing the code answers.
+- The why: when the card does not say who needs it and why, and the answer changes what gets built, it was asked, not assumed.
+- A choice between ways to build it that changes what users get, the cost or the time was asked; `design.md` or an ADR decides only a choice inside the code.
 - No criterion or task depends on an open question.
 
 ### Surfaces
@@ -72,6 +75,12 @@ Each surface the card exposes was walked ([spec.md](spec.md)):
 - Headings and EARS keywords in English; identifiers untranslated; prose in the run's language.
 - Nothing the code contradicts: a field, route, module or behaviour written as existing that does not.
 - No secrets, tokens, hosts, credentials or personal data, including in examples and questions.
+
+### Prototype (when people approve the documents)
+
+- When the prompt says people approve the documents on the card, a card that changes what a person sees has a prototype of each changed flow; a missing one is a major finding.
+- Each screen and state it shows comes from a criterion, with the criterion's values; a control, field or state no criterion has is a gap in the criteria (major).
+- Fictional data only, a banner saying it is illustrative, named under `## Sources` of `spec.md` with the criteria it shows, and no web address ([mockups.md](mockups.md)).
 
 ## Severity
 

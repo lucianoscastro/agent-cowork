@@ -146,13 +146,18 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
         ? `Mode: **new version**. The card's documents are in \`${SPEC}/\` (${attached.join(', ')}), and the card came back for a new version (people asked for changes on the card or put it back, or the Developer found what does not hold): update them from the card's latest discussion and keep what still holds.`
         : `Mode: **new**.${attached.length ? ` \`${SPEC}/\` holds the card's Markdown attachments (${attached.join(', ')}): read them as part of the card.` : ''}`,
       reviewContext: '',
+      approval: cfg.approval
+        ? `## Approval\n\nPeople approve these documents on the card before the Developer builds them, so a card that changes what a person sees carries a clickable prototype of each changed flow, \`mockup-<flow>.html\`, as the skill's \`references/mockups.md\` describes.`
+        : '',
       brain: await brainContext(project.name, workspace, `${issue.fields.summary}\n${description}`),
     };
     // Read only, like every call that reads people's text: the lead returns the documents and the platform saves them.
+    // A prototype the platform refused goes back to the lead with the layout problems, never silently missing.
+    let refused: string[] = [];
     const lead = async (label: string, extra: Record<string, string> = {}): Promise<Spec> => {
       const prompt = await renderPrompt('pm/specify', { ...vars, ...extra });
       const { output } = await runProvider<Spec>(cfg.lead.provider, { run, label, prompt, schema: SPEC_SCHEMA, cwd: workspace, mode: 'read-only', model: cfg.lead.model });
-      if (output.status === 'ready') await save(run, folder, output.files);
+      if (output.status === 'ready') refused = await save(run, folder, output.files, cfg.approval);
       return output;
     };
 
@@ -167,7 +172,7 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
      */
     const conform = async (): Promise<RunEnd | undefined> => {
       for (let round = 1; ; round++) {
-        const problems = lintSpec(await docsIn(folder), before);
+        const problems = [...lintSpec(await docsIn(folder), before), ...refused];
         if (!problems.length) return undefined;
         run.event('artifact', `Layout check: ${problems.length} problem(s)`, problems);
         const list = problems.map((p) => `- ${p}`).join('\n');
@@ -218,12 +223,14 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     const notes = findings.length ? `\n\n${passed ? 'Reviewer notes' : 'Reviewer findings still open'}:\n${formatFindings(findings)}` : '';
     const tasks = fromSpec(after, parseTasks);
     if (dryRun) return { status: 'done', summary: `would attach ${changed ? docs.join(', ') : 'nothing (unchanged)'} to ${key}${cfg.subtasks && tasks.length ? `, keep a sub-task for each of its ${tasks.length} tasks` : ''} and ${cfg.approval ? 'wait for a person to approve it on the card before handing it' : 'hand it'} to the Developer: ${spec.title}\n\n${spec.summary}${notes}` };
-    if (changed) await jira.attach(key, [...after].map(([name, text]) => ({ name, type: 'text/markdown', data: Buffer.from(text) })));
+    if (changed) await jira.attach(key, [...after].map(([name, text]) => ({ name, type: name.endsWith('.html') ? 'text/html' : 'text/markdown', data: Buffer.from(text) })));
     // The sub-tasks only mirror the tasks: the hand-off goes on without them when Jira refuses.
     if (cfg.subtasks) await syncSubtasks(run, key, tasks).catch((err) => run.event('warn', 'The sub-tasks were not updated', (err as Error).message));
     const attachedNote = `${BOT_MARK} Spec documents ${changed ? 'attached' : 'unchanged'}: ${docs.join(', ')}\n\n${spec.summary}${notes}`;
     if (cfg.approval) {
-      const { created } = await jira.comment(key, `${attachedNote}\n\nWaiting for approval: reply with only "approved" (or "aprovado", "aprobado") to hand the card to the Developer, or comment what to change and a new version follows.`);
+      const mockups = docs.filter((n) => n.endsWith('.html'));
+      const tryIt = mockups.length ? `\n\nPrototype: download ${mockups.join(', ')} and open it in a browser to click through the screens. The criteria in spec.md decide where they differ.` : '';
+      const { created } = await jira.comment(key, `${attachedNote}${tryIt}\n\nWaiting for approval: reply with only "approved" (or "aprovado", "aprobado") to hand the card to the Developer, or comment what to change and a new version follows.`);
       return { status: 'waiting', summary: `Waiting for a person to approve ${docs.join(', ')} on ${key}: ${spec.title}`, data: { waitingSince: created, approval: true } };
     }
     await jira.comment(key, `${attachedNote}\n\nHanded to the Developer (label ${ready}). To change the spec, comment what to change and put the label ${cfg.label} back.`);
@@ -343,16 +350,48 @@ async function ask(run: Run, key: string, questions: string, dryRun: boolean): P
 }
 
 /**
- * Replaces the documents in the work folder with the set the lead returned (people's notes stay). Exported for tests.
+ * Replaces the documents in the work folder with the set the lead returned (people's notes stay). A prototype is kept
+ * only when people approve the documents (`prototypes`), and only offline. Returns the prototypes refused while they
+ * were asked for, as problems for the lead to fix. Exported for tests.
  * ponytail: up to 20 documents of 200 KB; a name outside the layout is refused, never written.
  */
-export async function save(run: Run | undefined, folder: string, files: Doc[]): Promise<void> {
-  const bad = files.filter((f) => !jira.SPEC_DOC.test(f.name) || f.content.length > 200_000);
-  if (bad.length) run?.event('warn', `Ignored ${bad.length} document(s) outside the layout`, bad.map((f) => f.name));
-  const good = files.filter((f) => !bad.includes(f)).slice(0, 20);
+export async function save(run: Run | undefined, folder: string, files: Doc[], prototypes = false): Promise<string[]> {
+  const sealed = files.map((f) => (f.name.endsWith('.html') ? { ...f, content: (prototypes && offline(f.content)) || '' } : f));
+  // Bytes, as Jira counts them: a document past the limit would be skipped when the card's documents are read back.
+  const bad = sealed.filter((f) => !jira.SPEC_DOC.test(f.name) || Buffer.byteLength(f.content) > 200_000 || (f.name.endsWith('.html') && !f.content));
+  if (bad.length) run?.event('warn', `Ignored ${bad.length} document(s): outside the layout, too large, or a prototype not asked for or reaching the network`, bad.map((f) => f.name));
+  const good = sealed.filter((f) => !bad.includes(f)).slice(0, 20);
   if (!good.some((f) => f.name === 'spec.md')) throw new Error('The documents have no spec.md');
   for (const name of (await docsIn(folder)).keys()) await rm(join(folder, name));
   for (const f of good) await writeFile(join(folder, f.name), f.content);
+  const refused = prototypes ? bad.filter((f) => jira.SPEC_DOC.test(f.name) && f.name.endsWith('.html')) : [];
+  return refused.map((f) => `\`${f.name}\` was dropped: a prototype is one whole HTML document that starts with \`<!doctype html>\`, under 200 KB, with no web address anywhere (no CDN, font, image, script or link address).`);
+}
+
+/** Blocks every request of a prototype opened from the card: inline CSS, scripts and data: images only. */
+const OFFLINE = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'">`;
+
+/**
+ * A prototype as attached to the card: the network policy right after `<!doctype html>`, before any tag or comment,
+ * where the parser puts it first in the head whatever follows. Nothing when the document does not start with the
+ * doctype, or names a web address (entities decoded; the SVG namespace aside). Idempotent, so an unchanged prototype
+ * stays unchanged and is not attached again.
+ * ponytail: the policy blocks requests, not navigation (a link, or an address a script builds); the address check is a
+ * second net for links, and people who can write a card are trusted that far. Exported for tests.
+ */
+export function offline(html: string): string | undefined {
+  const doctype = /^\s*<!doctype html>/i.exec(html);
+  if (!doctype) return undefined;
+  const char = (n: number) => (n <= 0x10ffff ? String.fromCodePoint(n) : '');
+  const plain = html
+    .replace(/&#x([0-9a-f]+);?/gi, (_, hex: string) => char(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);?/g, (_, dec: string) => char(Number(dec)))
+    .replace(/&colon;/gi, ':')
+    .replace(/&sol;/gi, '/')
+    .replace(/&(tab|newline);|[\t\n\r]/gi, '');
+  if (/https?:\/\/(?!www\.w3\.org\/)/i.test(plain)) return undefined;
+  const rest = html.slice(doctype[0].length);
+  return `<!doctype html>\n${OFFLINE}${rest.startsWith(`\n${OFFLINE}`) ? rest.slice(OFFLINE.length + 1) : rest}`;
 }
 
 /** The Product Manager's documents in the work folder, by name. */

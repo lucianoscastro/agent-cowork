@@ -16,6 +16,8 @@ Present tense, no solution inside it: what is true today that should not be, who
 
 Close with one line: what is different for a user when this ships. That line is the goal the criteria are held against.
 
+When the change could make something worse for someone (a page that gets slower, a flow they rely on, what they see today), add one line on what must not get worse. Each such line is also a criterion with its value, so it is tested, not hoped: "the Orders page still loads its first 50 orders in one request".
+
 ## Walk the surfaces
 
 Each kind of surface carries the same decisions every time. Walk the row for every surface the card exposes; each item becomes a criterion, an existing behaviour you name, or a question. The walk is not written into the spec.
@@ -82,7 +84,7 @@ Write it when the path crosses more than one module, adds a route or contract, o
 
 ## design.md (Large, Complex)
 
-The depth `spec.md` leaves out, for the builder: how the parts fit, not what must be true. Sections: `## Architecture` (a mermaid drawing and a paragraph; for Complex, the 2-3 approaches weighed and the one chosen), `## Code reuse` (`| Existing | Location | How it is used |`), `## Components` (purpose, location, interfaces, what it reuses, per component), `## Data` (the models this adds or changes, and their relations), `## Error handling` (`| Scenario | Handling | What the user sees |`), `## Risks` (`| Concern | Location | Impact | Mitigation |`, from what you saw reading the code; `None found` is valid). It never restates criteria; it cites them by id.
+The depth `spec.md` leaves out, for the builder: how the parts fit, not what must be true. Sections: `## Architecture` (a mermaid drawing and a paragraph; for Complex, the 2-3 approaches weighed and the one chosen: asked on the card when they differ in what users get, the cost or the time ([questions.md](questions.md)), otherwise your call, with an ADR when it is one-way), `## Code reuse` (`| Existing | Location | How it is used |`), `## Components` (purpose, location, interfaces, what it reuses, per component), `## Data` (the models this adds or changes, and their relations), `## Error handling` (`| Scenario | Handling | What the user sees |`), `## Risks` (`| Concern | Location | Impact | Mitigation |`, from what you saw reading the code; `None found` is valid). It never restates criteria; it cites them by id.
 
 ## Template: `spec/spec.md`
 
@@ -94,6 +96,8 @@ The depth `spec.md` leaves out, for the builder: how the parts fit, not what mus
 <Present tense, no solution inside it: what is true today, who pays, what it costs. The evidence the card gives, or a note that it gives none.>
 
 <What is different for a user when this ships.>
+
+<What must not get worse, when the change could make something worse: each one is also a criterion.>
 
 ## Criteria
 

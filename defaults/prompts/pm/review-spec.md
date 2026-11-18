@@ -22,6 +22,8 @@ Review the spec documents of Jira issue {{key}} ("{{summary}}") in `{{folder}}/`
 
 {{brain}}
 
+{{approval}}
+
 ## Operations
 
 1. Read every file in `{{folder}}/`, then the request again, one sentence at a time: each must land on a criterion, an out-of-scope row or an open question.

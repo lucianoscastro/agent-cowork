@@ -95,16 +95,19 @@ export const triggerLabel = (jql: string): string | undefined => /labels\s*(?:=|
 type Attachment = { filename: string; created: string; size: number; content: string };
 /** A name safe to save under a folder: a Markdown file name, no path. Exported for tests. */
 export const markdownName = (name: string) => /^[\w][\w .()-]{0,120}\.md$/i.test(name) && !name.includes('..');
-/** The Product Manager's documents. Each version is attached as a whole set, so a version drops one by leaving it out. */
-export const SPEC_DOC = /^(spec|design|tasks)\.md$|^ADR-\d{2}-[\w-]{1,80}\.md$/;
+/**
+ * The Product Manager's documents, and the clickable prototypes it adds when people approve them on the card. Each
+ * version is attached as a whole set, so a version drops one by leaving it out.
+ */
+export const SPEC_DOC = /^(spec|design|tasks)\.md$|^ADR-\d{2}-[\w-]{1,80}\.md$|^mockup-[\w-]{1,80}\.html$/;
 
 /**
- * Which Markdown attachments a run reads, the newest of each name: people's notes, and of the spec documents only
+ * Which attachments a run reads, the newest of each name: people's Markdown notes, and of the spec documents only
  * the set attached with the newest `spec.md`. Exported for tests.
  * ponytail: a version is one upload, seconds apart; a minute of slack.
  */
 export function currentDocs<T extends Pick<Attachment, 'filename' | 'created'>>(attachments: T[]): T[] {
-  const sorted = attachments.filter((a) => markdownName(a.filename)).sort((x, y) => Date.parse(x.created) - Date.parse(y.created));
+  const sorted = attachments.filter((a) => markdownName(a.filename) || SPEC_DOC.test(a.filename)).sort((x, y) => Date.parse(x.created) - Date.parse(y.created));
   const spec = sorted.findLast((a) => a.filename === 'spec.md');
   const since = spec ? Date.parse(spec.created) - 60_000 : 0;
   const latest = new Map<string, T>();
@@ -115,7 +118,7 @@ export function currentDocs<T extends Pick<Attachment, 'filename' | 'created'>>(
 }
 
 /**
- * Saves the card's current Markdown attachments in `dir` (see `currentDocs`) and returns their names. Credentials
+ * Saves the card's current Markdown attachments and prototypes in `dir` (see `currentDocs`) and returns their names. Credentials
  * go only to the configured Jira site.
  * ponytail: at most 20 files of up to 200 KB each; a card's spec is a handful of small files.
  */

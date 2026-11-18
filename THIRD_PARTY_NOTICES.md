@@ -56,7 +56,9 @@ NauckGroup LTDA). Its `NOTICE.md` holds the full attribution, the MIT notice and
 The `systematic-debugging` skill in `defaults/skills/systematic-debugging/` (`metadata.origin: adapted`) and the
 `references/writing-good-tests.md` of `tdd-workflow` are adapted from the `systematic-debugging` and
 `test-driven-development` skills of [superpowers](https://github.com/obra/superpowers), condensed for agents that run
-without a person to ask during the run.
+without a person to ask during the run. The `spec-writing` skill takes ideas from its `brainstorming` skill (what the
+writer understood, the why, approaches, what must not get worse, and a clickable prototype for people who approve the
+spec); its `NOTICE.md` lists them.
 
 MIT License
 

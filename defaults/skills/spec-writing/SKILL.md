@@ -32,7 +32,8 @@ spec/                     # the run's work folder; each file becomes an attachme
 ├── spec.md               # always
 ├── design.md             # only Large/Complex: architecture, components, data
 ├── ADR-NN-<slug>.md      # only one-way doors, numbered within the card (ADR-01, ADR-02)
-└── tasks.md              # omitted for Small (≤3 obvious steps): then spec.md ends with a ## Tasks list and ## Checks
+├── tasks.md              # omitted for Small (≤3 obvious steps): then spec.md ends with a ## Tasks list and ## Checks
+└── mockup-<flow>.html    # only when people approve the documents on the card and the card changes a screen
 ```
 
 - Flat: no subfolders, since every file is attached under its own name. Links between them are plain names (`spec.md`, `ADR-01-orders-export-format.md`).
@@ -58,13 +59,14 @@ The work decides the depth, not a fixed pipeline. Size from evidence in the code
 
 1. **Read first.** The card whole (description, every comment, earlier answers), the documents already in the work folder, the project's recorded decisions (the brain notes in the prompt), each repository's `CLAUDE.md`, `AGENTS.md`, README and the docs it keeps about itself, and the code the card touches. ADRs or decision logs kept inside the repositories constrain the spec too.
 2. **Facts you look up; decisions you ask.** What the code does, which endpoint exists, a current limit: look it up. Scope, product behaviour, a trade-off: a person's.
-3. **Find the gray areas**: a decision that is a person's, has more than one defensible answer, and is not settled by the code, the card or its discussion. Before the documents exist, any one left means ask them all and write nothing yet. Anything else is an assumption you state with your default.
-4. **Recover the problem**: present tense, no solution inside it, and what is different for a user when this ships.
+3. **Find the gray areas**: a decision that is a person's, has more than one defensible answer, and is not settled by the code, the card or its discussion. Two hide best: why the card is wanted, when it does not say and the answer would change what gets built, and a choice between ways to build it that differ in what users get, the cost or the time ([references/questions.md](references/questions.md)). Before the documents exist, any one left means ask them all and write nothing yet. Anything else is an assumption you state with your default.
+4. **Recover the problem**: present tense, no solution inside it, what is different for a user when this ships, and what must not get worse for them.
 5. **Walk the surfaces** the card exposes and write the criteria in EARS, by slice, each with a concrete value ([references/spec.md](references/spec.md)).
 6. **What is being built**, when it applies: the path and its drawing, the data, what changes underneath, the surface, the one-way doors ([references/spec.md](references/spec.md)). `design.md` for Large and Complex.
 7. **One-way doors** get an ADR ([references/decisions.md](references/decisions.md)).
 8. **Tasks**: ordered, atomic, a test each, every criterion checked ([references/tasks.md](references/tasks.md)).
-9. **Before finishing**: read the card again, one sentence at a time. Each lands on a criterion, an `Out of scope` row or an open question; a sentence that lands nowhere is the requirement that goes missing, because nobody downstream reads the card again. Then run [references/review.md](references/review.md) over your own documents and fix what it finds.
+9. **Prototype**, only when the prompt says people approve the documents and the card changes a screen: a clickable `mockup-<flow>.html` of the criteria ([references/mockups.md](references/mockups.md)).
+10. **Before finishing**: read the card again, one sentence at a time. Each lands on a criterion, an `Out of scope` row or an open question; a sentence that lands nowhere is the requirement that goes missing, because nobody downstream reads the card again. Then run [references/review.md](references/review.md) over your own documents and fix what it finds.
 
 ## Rules
 
@@ -99,6 +101,7 @@ The work decides the depth, not a fixed pipeline. Size from evidence in the code
 | [references/tasks.md](references/tasks.md) | writing `tasks.md`, or the `## Tasks` and `## Checks` of a Small spec |
 | [references/decisions.md](references/decisions.md) | a one-way door needs an ADR |
 | [references/questions.md](references/questions.md) | a gray area needs a person, or answers arrived |
+| [references/mockups.md](references/mockups.md) | people approve the documents on the card and the card changes a screen |
 | [references/review.md](references/review.md) | reviewing the documents, your own or as the second model |
 
 Attribution and changes from the sources: [NOTICE.md](NOTICE.md).
