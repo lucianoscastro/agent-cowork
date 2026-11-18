@@ -1,7 +1,8 @@
 ---
 name: frontend-patterns
 description: Frontend architecture patterns for React — component composition, state management, performance optimization, data fetching, forms, and error boundaries. For visual design, tokens, and styling consistency, use design-system instead.
-origin: ECC
+metadata:
+  origin: "ECC"
 ---
 
 # Frontend Development Patterns

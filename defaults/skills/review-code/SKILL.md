@@ -1,7 +1,8 @@
 ---
 name: review-code
 description: Canonical full code-review skill for explicit "review my code", "revise o codigo", "revise o PR", "corrija", "aplique as correcoes", PR review, pre-merge checks, large/risky local diffs, or review-and-fix requests. Runs a 5-phase review (lint, design, logic, security, integrity) for pending local changes or GitHub PRs in Node.js, React, and .NET Core (C#); use a lighter self-review for tiny documentation, formatting, or obvious one-line mechanical changes. The security phase already covers what a standalone security review would, so do not run a separate security pass. Disambiguation - prefer this skill for any general "review my code / PR" request; the built-in /code-review (and its /code-review ultra cloud tier) is a separate automated diff pass, /simplify is quality-only cleanup, /security-review is security-only, /review is GitHub-PR-only - route to those only when the user names them explicitly.
-origin: custom
+metadata:
+  origin: "custom"
 ---
 
 # Professional Code Review (5 Phases)

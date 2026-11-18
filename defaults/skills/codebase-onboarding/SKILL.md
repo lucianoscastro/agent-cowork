@@ -1,7 +1,8 @@
 ---
 name: codebase-onboarding
 description: Analyze an unfamiliar codebase and generate a structured onboarding guide with architecture map, key entry points, conventions, request lifecycle, and common commands. Use for first-pass repository orientation, "help me understand/onboard me", "me explique esse repo". Disambiguation - to only create or refresh a CLAUDE.md/AGENTS.md instruction file use the built-in init skill (or edit the file directly); use this skill when the goal is understanding the codebase, not writing instructions.
-origin: ECC
+metadata:
+  origin: "ECC"
 ---
 
 # Codebase Onboarding

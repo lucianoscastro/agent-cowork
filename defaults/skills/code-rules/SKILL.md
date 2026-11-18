@@ -1,7 +1,8 @@
 ---
 name: code-rules
 description: "Canonical coding rulebook for TypeScript, JavaScript, React, and Node.js — the engineering principles (Readability, KISS, DRY, YAGNI) plus the atomic checkable rules they produce: types, naming, React components, testing, code smells, and anti-patterns. Use when writing or reviewing TS/JS/React code, settling a DRY-vs-clarity or abstraction tradeoff, or detecting code smells."
-origin: custom
+metadata:
+  origin: "custom"
 ---
 
 # Code Rules

@@ -1,7 +1,8 @@
 ---
 name: design-system
 description: Generate or audit design systems and design tokens, check visual consistency, and review PRs that touch styling — the visual layer (colors, typography, spacing, aesthetic). Also holds a catalog of 12 ready visual presets for presentation and landing-page work (STYLE_PRESETS.md). Disambiguation - for React component architecture, state management, and performance use frontend-patterns; for chart, plot, dashboard, or data-visualization color (categorical/sequential/diverging palettes, stat tiles, legends, axes) use the built-in dataviz skill, which owns chart color decisions.
-origin: ECC
+metadata:
+  origin: "ECC"
 ---
 
 # Design System — Generate & Audit Visual Systems

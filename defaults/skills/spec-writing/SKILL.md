@@ -1,7 +1,8 @@
 ---
 name: spec-writing
 description: "Turns one card or request into the documents an agent builds from, with no human in the loop: spec.md (problem, EARS criteria with concrete values, out of scope, assumptions, open questions, and the path, data and one-way doors when they apply), design.md, ADRs and tasks.md (ordered atomic tasks, a test each, a check per criterion), sized to the work. Gray areas are returned as numbered questions for people to answer, never guessed. Use when writing spec documents for a card, when answers to earlier questions arrive or people ask for a new version, and when reviewing such documents before they are attached to the card."
-origin: adapted
+metadata:
+  origin: "adapted"
 ---
 
 # Spec Writing

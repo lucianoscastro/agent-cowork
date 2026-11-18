@@ -1,7 +1,8 @@
 ---
 name: tdd-workflow
 description: Test-guided development workflow with RED-GREEN-REFACTOR cycle, regression-test selection, and versioned E2E testing patterns (Playwright). Use for non-trivial features, bug fixes, refactors, API/UI behavior changes, or E2E test infrastructure; skip the full TDD ceremony for tiny documentation, formatting, or obvious one-line mechanical changes.
-origin: ECC
+metadata:
+  origin: "ECC"
 ---
 
 # Test-Guided Development Workflow

@@ -1,7 +1,8 @@
 ---
 name: backend-patterns
 description: Backend architecture and API design patterns — layered architecture, database optimization, caching, error handling, auth, rate limiting, plus REST and GraphQL API design (resource naming, status codes, pagination, filtering, versioning). For Node.js, Express, GraphQL, and REST APIs.
-origin: ECC
+metadata:
+  origin: "ECC"
 ---
 
 # Backend Development Patterns

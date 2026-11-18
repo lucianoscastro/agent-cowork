@@ -1,7 +1,8 @@
 ---
 name: ui-taste
 description: "Art direction and anti-slop craft for web UI: grounds a design in its subject, commits to a deliberate direction (palette, type, layout, one signature move, motion, copy voice), builds or fixes UI so it does not read as AI-generated, and checks it with a scanner for generated-UI tells. Use whenever you build, design, redesign, restyle or polish a landing page, site, app screen, dashboard, form, component, HTML artifact or mockup, new or inside an existing React, Next.js, Vue, Svelte or Tailwind codebase; when asked for design options or variants; or when a UI looks generic, templated, bland or AI-made ('parece feito por IA', 'genérico', 'sem personalidade', 'deixa mais bonito', 'melhora o visual'). Disambiguation - to generate or audit design tokens and consistency of an existing system use design-system; for React architecture and state use frontend-patterns; for chart colors use dataviz; for real-browser QA use browser-qa."
-origin: custom
+metadata:
+  origin: "custom"
 ---
 
 # UI Taste
