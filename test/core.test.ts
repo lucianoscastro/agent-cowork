@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
-import { fromSpec, parseChecks, parseTasks, reviewPasses, specBrief, taskBrief, unproven, validPromotion } from '../src/agents/developer.ts';
+import { checkpointRef, clearCheckpoints, fromSpec, parseChecks, parseTasks, resumeBuild, reviewPasses, saveCheckpoint, specBrief, taskBrief, taskFingerprint, unproven, validPromotion } from '../src/agents/developer.ts';
 import { lintSpec, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
@@ -1216,6 +1216,54 @@ test('developer: a spec is built one task at a time, and each task keeps one sub
   const plan = planSubtasks(tasks, [sub('ABC-200', 'T1: Range validation', 'done'), sub('ABC-201', 'T2: CSV'), sub('ABC-202', 'T3: Dropped'), sub('ABC-203', 'T5: Done and dropped', 'done'), sub('ABC-204', 'Write the release notes')]);
   assert.deepEqual(plan, { create: [{ id: 'T4', title: 'Export button' }], rename: [{ key: 'ABC-201', summary: 'T2: CSV writer' }], close: ['ABC-202'] });
   assert.deepEqual(planSubtasks([], []), { create: [], rename: [], close: [] });
+});
+
+test('developer: a stopped spec build resumes after the tasks it verified, while they and the base are unchanged', async () => {
+  // The fingerprint follows what a task's build depends on: its text, the criteria it covers, its checks rows.
+  const spec = '# spec\n\n## Criteria\n\n- **AC1** WHEN a user exports THEN the system SHALL return CSV\n- **AC2** IF the range is longer than 31 days THEN the API SHALL respond 422\n';
+  const tasksMd = '# Tasks\n\n## Tasks\n\n### T1: Range validation\n\n- **Covers**: AC2\n\n### T2: CSV writer\n\n- **Covers**: AC1\n\n## Checks\n\n| Criterion | Proven by | Task |\n|---|---|---|\n| AC1 | `a.test.ts`: "returns CSV" | T2 |\n| AC2 | `r.test.ts`: "rejects 32 days" | T1 |\n';
+  const docs = (s: string, t: string) => new Map([['spec.md', s], ['tasks.md', t]]);
+  const fp = (d: Map<string, string>, id: string) => taskFingerprint(d, fromSpec(d, parseChecks), { id, title: '' });
+  const v1 = docs(spec, tasksMd);
+  assert.equal(fp(v1, 'T1'), fp(docs(spec, tasksMd.replace('CSV writer', 'CSV export')), 'T1'));
+  assert.notEqual(fp(v1, 'T1'), fp(docs(spec.replace('31 days', '30 days'), tasksMd), 'T1'));
+  assert.equal(fp(v1, 'T2'), fp(docs(spec.replace('31 days', '30 days'), tasksMd), 'T2'));
+  assert.notEqual(fp(v1, 'T2'), fp(docs(spec, tasksMd.replace('"returns CSV"', '"returns a CSV file"')), 'T2'));
+
+  // Checkpoints are refs of the repository, outside the branch: resumed in order, the last task always built again.
+  const dir = mkdtempSync(join(tmpdir(), 'resume-'));
+  const git = (...args: string[]) => sh('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir });
+  await git('init', '-q');
+  const commit = async (file: string) => {
+    writeFileSync(join(dir, file), file);
+    await git('add', '.');
+    await git('commit', '-qm', file);
+    return git('rev-parse', 'HEAD');
+  };
+  const base = await commit('base.txt');
+  await git('update-ref', 'refs/remotes/origin/main', base);
+  const repos = [{ role: 'api', repo: 'acme/api', base: 'main', verify: [], work: { cache: dir, dir } }];
+  const refs = ['T1', 'T2', 'T3'].map((id) => checkpointRef('ABC-1', { id, title: '' }, 'f00d'));
+  const t1 = await commit('t1.txt');
+  await saveCheckpoint(repos, refs[0]);
+  const t2 = await commit('t2.txt');
+  await saveCheckpoint(repos, refs[1]);
+  await git('reset', '-q', '--hard', base);
+  assert.equal(await resumeBuild(repos, refs), 2);
+  assert.equal(await git('rev-parse', 'HEAD'), t2);
+  assert.equal(await resumeBuild(repos, refs.slice(0, 2)), 1);
+  assert.equal(await git('rev-parse', 'HEAD'), t1);
+  // T1 changed: its new fingerprint has no checkpoint, so everything is built again.
+  assert.equal(await resumeBuild(repos, [checkpointRef('ABC-1', { id: 'T1', title: '' }, 'beef'), ...refs.slice(1)]), 0);
+  // The base moved since: building again from it.
+  await git('reset', '-q', '--hard', base);
+  await git('update-ref', 'refs/remotes/origin/main', await commit('moved.txt'));
+  assert.equal(await resumeBuild(repos, refs), 0);
+  await git('update-ref', 'refs/remotes/origin/main', base);
+  // Once the PR holds the build, the card's checkpoints go.
+  await clearCheckpoints(repos, 'ABC-1');
+  assert.equal(await git('for-each-ref', 'refs/agentcowork/'), '');
+  assert.equal(await resumeBuild(repos, refs), 0);
 });
 
 test('runs: the time limit moves later once the run knows how much work it holds', async () => {

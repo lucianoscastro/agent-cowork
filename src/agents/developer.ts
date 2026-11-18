@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type ModelChoice, outputLanguage, type Project, read, repoFolder, type Reviewer, verifyCommands } from '../config.ts';
@@ -370,24 +370,34 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
         },
         rows.length ? () => validate(rows) : undefined,
       );
-    // The card's sub-tasks (one per task, made by the Product Manager) follow the build.
+    // The card's sub-tasks (one per task, made by the Product Manager) follow the build: a task built again (it changed,
+    // or comes after one that did) goes back to in progress.
     const subtasks = subtasksById(issue.fields.subtasks ?? []);
     const moveSubtask = async (task: Task, category: 'indeterminate' | 'done') => {
       const s = subtasks.get(task.id);
-      const now = s?.fields.status.statusCategory.key;
-      // Forward only: a card built again (resumed, or back from the Product Manager) leaves a done sub-task done.
-      if (dryRun || !s || now === category || now === 'done') return;
-      await jira.moveTo(s.key, category).catch((err) => run.event('warn', `Sub-task ${s.key} was not moved`, (err as Error).message));
+      if (dryRun || !s || s.fields.status.statusCategory.key === category) return;
+      await jira.moveTo(s.key, category).then(
+        () => void (s.fields.status.statusCategory.key = category),
+        (err) => run.event('warn', `Sub-task ${s.key} was not moved`, (err as Error).message),
+      );
     };
     // --- Build: with a spec's tasks.md, one call per task in their order, each committed, verified and its checks
     // proven before the next starts; otherwise one call for the whole change ---
-    // ponytail: a run that stops at a task starts over from the base next time; resume from the last verified task
-    // (push the branch per task) if rebuilding the earlier ones gets costly.
+    // A verified task leaves a checkpoint, so a run that stopped (a question, the Product Manager, a failure, the time
+    // limit) resumes after the tasks it already built, as long as they did not change.
+    const refs = stepwise ? tasks.map((t) => checkpointRef(key, t, taskFingerprint(spec, checks, t))) : [];
+    const resumed = await resumeBuild(repos, refs);
+    if (resumed) run.event('info', `Resumed after ${tasks.slice(0, resumed).map((t) => t.id).join(', ')}, built and verified in an earlier run`);
     let failure: string | undefined;
     let built!: Built;
     const results: string[] = [];
     const steps = stepwise ? tasks : [undefined];
     for (const [i, task] of steps.entries()) {
+      if (task && i < resumed) {
+        results.push(`### ${subtaskSummary(task)}\n\nBuilt and verified in an earlier run of this card: see its commits.`);
+        await moveSubtask(task, 'done');
+        continue;
+      }
       // The sub-tasks this call builds: its task, or every task of a small spec built in one call.
       const covers = task ? [task] : tasks;
       for (const t of covers) await moveSubtask(t, 'indeterminate');
@@ -406,7 +416,10 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
         throw err;
       }
       if (failure) return await block('parked', `The must-pass checks still fail after ${cfg.limits.verify} fix attempts${task ? ` on task ${task.id}` : ''}, so no PR was opened.\n\n${failure}`);
-      if (task) results.push(`### ${subtaskSummary(task)}\n\n${built.summary}`);
+      if (task) {
+        results.push(`### ${subtaskSummary(task)}\n\n${built.summary}`);
+        await saveCheckpoint(repos, refs[i]);
+      }
       for (const t of covers) await moveSubtask(t, 'done');
     }
     vars.task = '';
@@ -461,6 +474,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       if (!dryRun) prs.push({ repo: r.repo, url, number: Number(url.split('/').pop()), branch, base: r.base });
     }
     run.event('artifact', `Pull requests${dryRun ? ' (dry run)' : ''}`, urls);
+    // The PR holds the build now: a card sent back for rework later builds again from the base.
+    await clearCheckpoints(repos, key);
     if (!dryRun) {
       await jira.comment(key, `${BOT_MARK} Pull requests opened:\n${urls.join('\n')}\n\n${body}`);
       notify('pr', { title: `Developer opened ${urls.length === 1 ? 'a pull request' : `${urls.length} pull requests`} for ${key}`, text: `${built.title}\n${urls.join('\n')}`, url: urls[0], agent: 'developer' });
@@ -498,6 +513,70 @@ export function taskBrief(task: Task, tasks: Task[]): string {
     `- After this call the platform commits the task and runs the must-pass commands, then checks that the tests the \`## Checks\` table names for ${task.id} are in the change.`,
     '- For "done", `summary` is this task\'s part of the pull request description: **Result** and **How to test** for this task only (no **Plan**: the approved plan stands for all tasks). `title` names the whole change: it becomes the pull request title.',
   ].join('\n');
+}
+
+/** A task's text in `tasks.md`: its heading up to the next task's. */
+function taskBlock(markdown: string, id: string): string {
+  const lines = section(markdown, 'Tasks').split('\n');
+  const start = lines.findIndex((l) => new RegExp(`^###\\s+\\**${id}\\b`).test(l));
+  if (start < 0) return '';
+  const end = lines.findIndex((l, i) => i > start && /^###\s/.test(l));
+  return lines.slice(start, end < 0 ? undefined : end).join('\n').trim();
+}
+
+/**
+ * What a task's build depends on in the spec: its text, the criteria it covers and its rows of the checks table. A
+ * new version that changes none of them keeps the task's checkpoint. Exported for tests.
+ * ponytail: design.md and the ADRs are left out; a change there alone does not rebuild a task.
+ */
+export function taskFingerprint(spec: Map<string, string>, checks: Check[], task: Task): string {
+  const block = taskBlock(spec.get('tasks.md') ?? '', task.id);
+  const covered = new Set(block.match(/\bAC\d+\b/g) ?? []);
+  const criteria = section(spec.get('spec.md') ?? '', 'Criteria')
+    .split('\n')
+    .filter((l) => covered.has(/^\s*[-*]\s+\**(AC\d+)\**/.exec(l)?.[1] ?? ''));
+  const rows = checks.filter((c) => new RegExp(`\\b${task.id}\\b`).test(c.task)).map((c) => `${c.criterion} ${c.proof}`);
+  return createHash('sha256').update([block, ...criteria, ...rows].join('\n')).digest('hex').slice(0, 12);
+}
+
+/**
+ * The checkpoint of a verified task: a ref in each repository's cached clone (never pushed), so it outlives the run's
+ * worktree. Named by the card, the task and its fingerprint: a task whose spec changed has no checkpoint under its new one.
+ */
+export const checkpointRef = (key: string, task: Task, fingerprint: string) => `refs/agentcowork/${key}/${task.id}-${fingerprint}`;
+
+export const saveCheckpoint = async (repos: RepoCheckout[], ref: string) => {
+  for (const r of repos) await sh('git', ['update-ref', ref, 'HEAD'], { cwd: r.work.dir });
+};
+
+export async function clearCheckpoints(repos: RepoCheckout[], key: string): Promise<void> {
+  for (const r of repos) {
+    const refs = (await sh('git', ['for-each-ref', '--format=%(refname)', `refs/agentcowork/${key}/`], { cwd: r.work.dir })).split('\n').filter(Boolean);
+    for (const ref of refs) await sh('git', ['update-ref', '-d', ref], { cwd: r.work.dir });
+  }
+}
+
+/**
+ * How many tasks, in order, an earlier run already built and verified unchanged on the same base: each needs its
+ * checkpoint in every repository. The worktrees move to the last one. The last task is always built again, so the
+ * run has its pull request title and proves every row of the checks table.
+ * ponytail: a base that moved since means building again from it; rebase the checkpoint instead if that gets costly.
+ * Checkpoints of a card that never reaches a PR stay in the cache. Exported for tests.
+ */
+export async function resumeBuild(repos: RepoCheckout[], refs: string[]): Promise<number> {
+  let done = 0;
+  for (const ref of refs.slice(0, -1)) {
+    const kept = await Promise.all(
+      repos.map(async (r) => {
+        const sha = await sh('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd: r.work.dir }).catch(() => '');
+        return Boolean(sha) && (await sh('git', ['merge-base', '--is-ancestor', `refs/remotes/origin/${r.base}`, sha], { cwd: r.work.dir }).then(() => true, () => false));
+      }),
+    );
+    if (!kept.every(Boolean)) break;
+    done++;
+  }
+  if (done) for (const r of repos) await sh('git', ['reset', '--hard', refs[done - 1]], { cwd: r.work.dir });
+  return done;
 }
 
 /** How the Developer's comment opens when it sends a card back to the Product Manager: also how hand-backs are counted. */
