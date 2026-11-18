@@ -12,6 +12,7 @@ export type Issue = {
     description: AdfNode | null;
     comment: { comments: Comment[] };
     status: { name: string; statusCategory: { key: string } };
+    labels: string[];
   };
 };
 type Transition = { id: string; name: string; to: { name: string } };
@@ -77,7 +78,7 @@ export async function searchBoard(boardId: string, jql: string): Promise<string[
 export const missing = (err: unknown) => /: 404 /.test((err as Error).message);
 
 export function getIssue(key: string): Promise<Issue> {
-  return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status`);
+  return api<Issue>(`api/3/issue/${key}?fields=summary,description,comment,status,labels`);
 }
 
 /** Takes labels off a card and puts others on, in one update (a label already in that state is a no-op). */

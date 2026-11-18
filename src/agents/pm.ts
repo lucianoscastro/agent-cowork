@@ -124,7 +124,7 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
       repos: checkouts.join('\n'),
       folder: SPEC,
       mode: before.has('spec.md')
-        ? `Mode: **new version**. The card's documents are in \`${SPEC}/\` (${attached.join(', ')}), and people put the card back for a new version: update them from the card's latest discussion and keep what still holds.`
+        ? `Mode: **new version**. The card's documents are in \`${SPEC}/\` (${attached.join(', ')}), and the card came back for a new version (put back by people, or by the Developer with what does not hold): update them from the card's latest discussion and keep what still holds.`
         : `Mode: **new**.${attached.length ? ` \`${SPEC}/\` holds the card's Markdown attachments (${attached.join(', ')}): read them as part of the card.` : ''}`,
       reviewContext: '',
       brain: await brainContext(project.name, workspace, `${issue.fields.summary}\n${description}`),

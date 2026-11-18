@@ -9,7 +9,7 @@ Make your change for Jira issue {{key}} of the project "{{project}}" ("{{summary
 {{repos}}
 
 - The platform runs the must-pass commands with: {{toolchain}}.
-- After your change, the platform ran the verification commands and one failed:
+- After your change, the platform ran the verification commands and one failed, or its check of the spec's tests did:
 
 <failure>
 {{failure}}

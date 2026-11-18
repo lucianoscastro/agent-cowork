@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
-import { reviewPasses, specBrief, validPromotion } from '../src/agents/developer.ts';
+import { parseChecks, reviewPasses, specBrief, unproven, validPromotion } from '../src/agents/developer.ts';
 import { save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
@@ -1126,8 +1126,46 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.match(brief, /^## Spec/);
   assert.match(brief, /`spec\/spec.md`, `spec\/tasks.md`/);
   assert.match(brief, /Every acceptance criterion gets a test/);
+  assert.match(brief, /the card goes back to the Product Manager/);
 
   assert.equal(triggerLabel('labels = "agent-ready" AND statusCategory != Done'), 'agent-ready');
   assert.equal(triggerLabel('project = ABC AND labels in (build-me, other)'), 'build-me');
   assert.equal(triggerLabel('status = "To Do"'), undefined);
+});
+
+test('developer: the spec gate finds the tests the checks table names in the change', () => {
+  const tasks = [
+    '# ABC-123: Export - Tasks',
+    '## Tasks',
+    '- **Test**: unit, `src/orders/range.test.ts`: "not a check row"',
+    '## Checks',
+    '| Criterion | Proven by | Task |',
+    '|---|---|---|',
+    '| AC1 | `src/orders/range.test.ts`: "rejects a 32-day range with range_too_long" | T1 |',
+    '| **AC2** | `web/src/Export.test.tsx`: "shows the Export button"; `./api/tests/ExportTests.cs`: “Returns CSV for finance” | T2 |',
+    '| AC3 | checked by hand | T3 |',
+    '## Notes',
+    '| AC9 | `x.test.ts`: "after the section" | T9 |',
+  ].join('\n');
+  const checks = parseChecks(tasks);
+  assert.deepEqual(checks.map((c) => [c.criterion, c.task, c.tests.length]), [['AC1', 'T1', 1], ['AC2', 'T2', 2], ['AC3', 'T3', 0]]);
+  assert.deepEqual(checks[1].tests[1], { file: 'api/tests/ExportTests.cs', name: 'Returns CSV for finance' });
+  assert.deepEqual(parseChecks('# spec\n\nno table'), []);
+
+  // Changed files are named from the workspace: the repository's folder first.
+  const changed = [
+    { path: 'api/src/orders/range.test.ts', text: "it('rejects a 32-day range with range_too_long', () => {})" },
+    // The table names the repository folder; the case is a C# method name.
+    { path: 'api/tests/ExportTests.cs', text: '[Fact] public void Returns_CSV_for_finance() {}' },
+  ];
+  // A test the change lacks: the file, or the case in it. A row with no test named is not a failure here.
+  assert.deepEqual(unproven(checks, changed), ['AC2: `web/src/Export.test.tsx` is not in the change']);
+  // The same path in another repository is not the test the table names.
+  changed.push({ path: 'api/src/Export.test.tsx', text: "test('shows the Export button')" });
+  assert.deepEqual(unproven(checks, changed), ['AC2: `web/src/Export.test.tsx` is not in the change']);
+  changed.pop();
+  changed.push({ path: 'web/src/Export.test.tsx', text: "test('shows the Import button')" });
+  assert.deepEqual(unproven(checks, changed), ['AC2: `web/src/Export.test.tsx` has no case "shows the Export button"']);
+  changed[2].text = "test('shows the Export button')";
+  assert.deepEqual(unproven(checks, changed), []);
 });
