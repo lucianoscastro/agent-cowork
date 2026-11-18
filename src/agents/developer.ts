@@ -530,7 +530,7 @@ export function taskBrief(task: Task, tasks: Task[]): string {
 
 /** What a build call with the browser tools is told. */
 const BROWSER_BRIEF =
-  '## Browser\n\nThis call has a headless browser (the `playwright` tools, when your runtime offers them) that reaches only `http://localhost` and `http://127.0.0.1`. When your change alters what a person sees, load the `browser-check` skill and follow it: run the app from your checkout, check the changed screens and the console, then stop everything you started. Say what you checked under **How to test**, and what you could not run and why. Screenshots stay in the run\'s log, never in the repository.';
+  '## Browser\n\nThis call has a headless browser (the `playwright` tools, when your runtime offers them) whose requests are kept to `http://localhost` and `http://127.0.0.1`: use it only on the app you run there. When your change alters what a person sees, load the `browser-check` skill and follow it: run the app from your checkout, check the changed screens and the console, then stop everything you started. Say what you checked under **How to test**, and what you could not run and why. Screenshots stay in the run\'s log, never in the repository.';
 
 /**
  * Browser tools for a build call: headless and isolated, its requests kept to localhost, where the lead runs the app it

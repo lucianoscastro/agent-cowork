@@ -1292,6 +1292,15 @@ test('a runtime call leaves nothing running: what it started dies with it', asyn
   assert.ok(pid > 0);
   await new Promise((r) => setTimeout(r, 100));
   assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  // Aborted, a runtime that ignores SIGTERM goes too, with what it started.
+  const abort = new AbortController();
+  const pidFile = join(dir, 'pid');
+  const pending = spawnStream('sh', ['-c', `trap '' TERM; sleep 30 & echo $! > ${pidFile}; wait`], { cwd: dir, env: process.env, signal: abort.signal, transcript: join(dir, 'u.jsonl') });
+  await new Promise((r) => setTimeout(r, 300));
+  abort.abort('killed');
+  await assert.rejects(pending, /stopped/);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.throws(() => process.kill(Number(readFileSync(pidFile, 'utf8')), 0), /ESRCH/);
 });
 
 test('runs: the time limit moves later once the run knows how much work it holds', async () => {

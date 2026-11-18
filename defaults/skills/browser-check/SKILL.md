@@ -59,7 +59,7 @@ Skip it when nothing a person sees changed (a back-end, data or build change).
 
 ## Edges
 
-- The browser reaches only `localhost` and `127.0.0.1`. Never change the app's configuration to reach a remote environment, and never turn a security setting off to make it run.
+- Stay on the app you started, at `localhost` or `127.0.0.1`: the browser's requests are filtered to those origins, but the filter is no boundary (a redirect can leave it), so never follow a link or a redirect elsewhere. Never change the app's configuration to reach a remote environment, and never turn a security setting off to make it run.
 - No secrets, real accounts or personal data in forms or screenshots: use test data.
 - Screenshots and logs stay outside the checkout (the browser tools save them in the run's log). Never add them to the repository.
 - About 10 minutes for the whole check. A dev server that still does not start after two attempts is reported, not fought.

@@ -16,13 +16,17 @@ export function spawnStream(
 ): Promise<StreamResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, signal: opts.signal, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
-    child.on('exit', () => {
+    // On exit, and at once on an abort: a runtime that ignores the signal's SIGTERM must not keep its group alive.
+    // ponytail: a group left empty at exit frees its id; a new group could take it in the microseconds before this kill.
+    const killGroup = () => {
       try {
-        process.kill(-child.pid!, 'SIGKILL');
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
       } catch {
         // the group is already gone
       }
-    });
+    };
+    child.on('exit', killGroup);
+    opts.signal.addEventListener('abort', killGroup, { once: true });
     const file = createWriteStream(opts.transcript, { flags: 'a' });
     let stdout = '';
     let stderr = '';
