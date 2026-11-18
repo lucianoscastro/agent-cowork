@@ -504,8 +504,8 @@ const MAX_HAND_BACKS = 2;
 /** One row of the spec's `## Checks` table: the tests that prove a criterion, as `file`: "case". */
 export type Check = { criterion: string; proof: string; task: string; tests: { file: string; name: string }[] };
 
-/** The body of a document's `## <name>` section, up to the next heading of level 1 or 2. */
-function section(markdown: string, name: string): string {
+/** The body of a document's `## <name>` section, up to the next heading of level 1 or 2. Exported for the Product Manager. */
+export function section(markdown: string, name: string): string {
   const start = markdown.search(new RegExp(`^##\\s+${name}\\s*$`, 'm'));
   if (start < 0) return '';
   const body = markdown.slice(start).split('\n').slice(1).join('\n');
@@ -529,19 +529,22 @@ export type Task = { id: string; title: string };
 
 /** Parses the `## Tasks` section of a spec document; an id seen twice keeps its first entry. Exported for tests. */
 export function parseTasks(markdown: string): Task[] {
+  const seen = new Set<string>();
+  return listedTasks(markdown).filter((t) => !seen.has(t.id) && seen.add(t.id));
+}
+
+/** Every task the `## Tasks` section lists, a repeated id included. */
+export function listedTasks(markdown: string): Task[] {
   const lines = section(markdown, 'Tasks').split('\n');
   const heading = /^###\s+\**(T\d+)\**\s*[:.\-–—]?\s*(.+)$/;
   // The list form ends the deliverable at the first spaced dash: `1. **T1** <deliverable> - <where> - test: …`.
   const item = /^\d+\.\s+\**(T\d+)\**\s*[:.\-–—]?\s*(.+?)(?:\s+[-–—]\s.*)?$/;
   // One form per document, so a numbered line inside a task of tasks.md is never a task of its own.
   const form = lines.some((l) => heading.test(l)) ? heading : item;
-  const seen = new Set<string>();
   return lines.flatMap((line) => {
     const m = form.exec(line);
     const title = m?.[2].replace(/[*`]/g, '').trim().slice(0, 200);
-    if (!m || !title || seen.has(m[1])) return [];
-    seen.add(m[1]);
-    return [{ id: m[1], title }];
+    return m && title ? [{ id: m[1], title }] : [];
   });
 }
 

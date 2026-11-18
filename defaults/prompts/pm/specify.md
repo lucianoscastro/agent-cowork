@@ -57,3 +57,5 @@ You are done when you return:
 - `title`: the change in a few English words (e.g. "export orders as CSV").
 - `summary`: 2 to 5 sentences in {{language}} for the card: what the documents decide, the size you chose, and the assumptions the people reviewing the code should check.
 - `files`: for "ready", every document of this version, each `{ name, content }`: `spec.md` always, and `tasks.md`, `design.md` and `ADR-NN-<slug>.md` when the size calls for them. A document you leave out is dropped from the card. Empty for "needs_input".
+
+The platform reads the tasks, the criteria and the `## Checks` table from the documents before any review (the Developer builds task by task, and each task becomes a sub-task of the card): keep the templates' layout exactly, and a layout problem comes back to you to fix.

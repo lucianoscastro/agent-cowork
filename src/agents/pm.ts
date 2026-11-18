@@ -11,7 +11,7 @@ import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
 import { wake } from '../scheduler.ts';
 import { type Checkout, checkout, forEachLimit, log, removeCheckout, renderPrompt } from '../sh.ts';
-import { type Finding, formatFindings, fromSpec, parseTasks, reviewPanel, reviewPasses, subtaskSummary, subtasksById, type Task } from './developer.ts';
+import { type Finding, formatFindings, fromSpec, listedTasks, parseChecks, parseTasks, reviewPanel, reviewPasses, section, subtaskSummary, subtasksById, type Task } from './developer.ts';
 import { takeForce } from './status.ts';
 
 const { BOT_MARK } = jira;
@@ -141,6 +141,29 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     let spec = await lead('specify');
     if (spec.status === 'needs_input') return await ask(run, key, spec.questions, dryRun);
 
+    /**
+     * The platform's own check of what it reads from the documents (the tasks, the criteria and the checks table),
+     * before any reviewer: the lead fixes what fails, a bounded number of times, and the hand-off never carries
+     * documents the Developer and the sub-tasks cannot follow.
+     */
+    const conform = async (): Promise<RunEnd | undefined> => {
+      for (let round = 1; ; round++) {
+        const problems = lintSpec(await docsIn(folder), before);
+        if (!problems.length) return undefined;
+        run.event('artifact', `Layout check: ${problems.length} problem(s)`, problems);
+        const list = problems.map((p) => `- ${p}`).join('\n');
+        if (round > MAX_LAYOUT_FIXES) throw new Error(`The documents still break the layout the platform reads after ${MAX_LAYOUT_FIXES} fixes:\n${list}`);
+        run.stage(`Layout fix ${round}`);
+        spec = await lead(`layout-${round}`, {
+          reviewContext: `## Layout check\n\nThe platform reads the tasks, the criteria and the \`## Checks\` table from your documents, and this version breaks the layout of the skill's templates. Fix each problem below and change nothing else, then return all the fields again, with every document in \`files\`.\n\n<problems>\n${list}\n</problems>`,
+        });
+        if (spec.status === 'needs_input') return await ask(run, key, spec.questions, dryRun);
+      }
+    };
+
+    const stopped = await conform();
+    if (stopped) return stopped;
+
     // --- Review by the independent reviewers (none, one or both, as in the Developer), bounded; what is left goes on the card ---
     let findings: Finding[] = [];
     let passed = true;
@@ -160,6 +183,8 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
       });
       // A finding only people can settle: ask, and hand nothing to the Developer yet.
       if (spec.status === 'needs_input') return await ask(run, key, spec.questions, dryRun);
+      const stopped = await conform();
+      if (stopped) return stopped;
     }
 
     run.stage('Hand-off');
@@ -186,6 +211,46 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     for (const r of repos) await removeCheckout(r).catch(() => {});
     await rm(workspace, { recursive: true, force: true });
   }
+}
+
+// ponytail: two layout fixes per check; past that the run fails and a later poll tries the card again.
+const MAX_LAYOUT_FIXES = 2;
+
+/**
+ * What breaks the layout the platform reads from a version's documents: the tasks (`### T1: …` in `tasks.md`, or the
+ * list in `spec.md`), the criteria (`- **AC1** …` under `## Criteria`) and the `## Checks` table, which must give every
+ * criterion a named test and cite only tasks that exist. Ids stay stable against the version `before`. Exported for tests.
+ */
+export function lintSpec(docs: Map<string, string>, before: Map<string, string>): string[] {
+  const spec = docs.get('spec.md') ?? '';
+  const tasksMd = docs.get('tasks.md');
+  const problems: string[] = [];
+  if (tasksMd !== undefined && !parseTasks(tasksMd).length) problems.push('`tasks.md` has no task the platform can read: each one needs a `### T1: <deliverable>` heading under `## Tasks`.');
+  if (tasksMd === undefined && !parseTasks(spec).length) problems.push('`spec.md` has no task the platform can read: a small change lists them under `## Tasks` as `1. **T1** <deliverable> - …`; a larger one writes `tasks.md`.');
+  const listed = listedTasks(tasksMd ?? spec);
+  const repeated = [...new Set(listed.map((t) => t.id).filter((id, i, all) => all.indexOf(id) !== i))];
+  if (repeated.length) problems.push(`Task ids used twice: ${repeated.join(', ')}. Each task has its own id.`);
+  const tasks = new Set(listed.map((t) => t.id));
+  const criteria = [...section(spec, 'Criteria').matchAll(/^\s*[-*]\s+\**(AC\d+)\**/gm)].map((m) => m[1]);
+  if (!criteria.length) problems.push('`spec.md` has no criterion the platform can read: each one is `- **AC1** WHEN … THEN … SHALL …` under `## Criteria`.');
+  const checks = fromSpec(docs, parseChecks);
+  if (!checks.length) problems.push('The `## Checks` table has no row the platform can read: `| AC1 | `<test file>`: "<case>" | T1 |`.');
+  for (const ac of criteria.filter((c) => !checks.some((row) => row.criterion === c))) problems.push(`${ac} has no row in \`## Checks\`.`);
+  for (const row of checks) {
+    if (criteria.length && !criteria.includes(row.criterion)) problems.push(`\`## Checks\` cites ${row.criterion}, which is not a criterion of \`spec.md\`.`);
+    if (!row.tests.length) problems.push(`${row.criterion} names no test: write it as \`<test file>\`: "<case>".`);
+    const cited = row.task.match(/\bT\d+\b/g) ?? [];
+    if (!cited.length) problems.push(`${row.criterion} names no task in the Task column.`);
+    for (const id of cited.filter((t) => !tasks.has(t))) problems.push(`${row.criterion} cites ${id}, which is not a task.`);
+  }
+  // Stable ids: a task kept from the previous version keeps its number (the sub-tasks and the Developer find it by it).
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const now = new Map(listed.map((t) => [norm(t.title), t.id]));
+  for (const old of fromSpec(before, parseTasks)) {
+    const id = now.get(norm(old.title));
+    if (id && id !== old.id) problems.push(`"${old.title}" was ${old.id} in the previous version and is ${id} now: ids are stable, a new task takes the next number.`);
+  }
+  return [...new Set(problems)];
 }
 
 /** What the card's sub-tasks need for this version's tasks: one per task, found by its id. Exported for tests. */

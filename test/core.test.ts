@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
 import { fromSpec, parseChecks, parseTasks, reviewPasses, specBrief, taskBrief, unproven, validPromotion } from '../src/agents/developer.ts';
-import { planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
+import { lintSpec, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
@@ -1215,4 +1215,40 @@ test('developer: a spec is built one task at a time, and each task keeps one sub
   const plan = planSubtasks(tasks, [sub('ABC-200', 'T1: Range validation', 'done'), sub('ABC-201', 'T2: CSV'), sub('ABC-202', 'T3: Dropped'), sub('ABC-203', 'T5: Done and dropped', 'done'), sub('ABC-204', 'Write the release notes')]);
   assert.deepEqual(plan, { create: [{ id: 'T4', title: 'Export button' }], rename: [{ key: 'ABC-201', summary: 'T2: CSV writer' }], close: ['ABC-202'] });
   assert.deepEqual(planSubtasks([], []), { create: [], rename: [], close: [] });
+});
+
+test('product manager: the layout check finds what the platform cannot read in the documents', () => {
+  const spec = '# spec\n\n## Criteria\n\n### S1: Export (P1)\n\n- **AC1** WHEN a user exports THEN the system SHALL return CSV\n- **AC2** IF the range is longer than 31 days THEN the API SHALL respond 422\n\n## Out of scope\n';
+  const tasks = (rows: string, headings = '### T1: Range validation\n### T2: CSV writer') =>
+    `# Tasks\n\n## Tasks\n\n${headings}\n\n## Checks\n\n| Criterion | Proven by | Task |\n|---|---|---|\n${rows}`;
+  const good = '| AC1 | `src/export.test.ts`: "returns CSV" | T2 |\n| AC2 | `src/range.test.ts`: "rejects a 32-day range" | T1 |';
+  const docs = (t: string) => new Map([['spec.md', spec], ['tasks.md', t]]);
+  assert.deepEqual(lintSpec(docs(tasks(good)), new Map()), []);
+  // A small change keeps its tasks and checks in spec.md.
+  const small = `${spec}\n## Tasks\n\n1. **T1** Validate the range - \`api\`\n\n## Checks\n\n| Criterion | Proven by | Task |\n|---|---|---|\n| AC1 | \`a.test.ts\`: "x" | T1 |\n| AC2 | \`a.test.ts\`: "y" | T1 |`;
+  assert.deepEqual(lintSpec(new Map([['spec.md', small]]), new Map()), []);
+
+  assert.deepEqual(lintSpec(docs(tasks(good, '### Task one: Range validation')), new Map()), [
+    '`tasks.md` has no task the platform can read: each one needs a `### T1: <deliverable>` heading under `## Tasks`.',
+    'AC1 cites T2, which is not a task.',
+    'AC2 cites T1, which is not a task.',
+  ]);
+  assert.deepEqual(
+    lintSpec(docs(tasks('| AC1 | checked by hand | T2 |\n| AC3 | `a.test.ts`: "x" | T7 |\n| AC2 | `a.test.ts`: "y" | - |', '### T1: Range validation\n### T1: CSV writer')), new Map()),
+    [
+      'Task ids used twice: T1. Each task has its own id.',
+      'AC1 names no test: write it as `<test file>`: "<case>".',
+      'AC1 cites T2, which is not a task.',
+      '`## Checks` cites AC3, which is not a criterion of `spec.md`.',
+      'AC3 cites T7, which is not a task.',
+      'AC2 names no task in the Task column.',
+    ],
+  );
+  assert.deepEqual(lintSpec(new Map([['spec.md', '# spec\n'], ['tasks.md', tasks(good)]]), new Map()), [
+    '`spec.md` has no criterion the platform can read: each one is `- **AC1** WHEN … THEN … SHALL …` under `## Criteria`.',
+  ]);
+  assert.match(lintSpec(docs(tasks('| AC2 | `a.test.ts`: "y" | T1 |')), new Map()).join('\n'), /AC1 has no row in `## Checks`/);
+  // Ids are stable: a task kept from the previous version keeps its number.
+  const renumbered = tasks('| AC1 | `a.test.ts`: "x" | T3 |\n| AC2 | `a.test.ts`: "y" | T1 |', '### T1: Range validation\n### T3: CSV writer');
+  assert.deepEqual(lintSpec(docs(renumbered), docs(tasks(good))), ['"CSV writer" was T2 in the previous version and is T3 now: ids are stable, a new task takes the next number.']);
 });

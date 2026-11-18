@@ -2,6 +2,8 @@
 
 The documents are checked before they are attached to the card and handed to the Developer: by the writer over its own work, then by a second model. The reviewer is read only: it reports findings and never edits. One question drives it: can a builder with none of this context build the right thing from these files alone, and can the people reviewing the code see every decision that was made?
 
+The platform also checks the layout it reads before any review (the tasks, the criteria and the `## Checks` table, and ids stable across versions), so a reviewer judges substance; a layout slip it missed is still a blocker.
+
 ## Read
 
 - The card whole: description, comments, every answer (`Q<n> <letter>` or free text).
