@@ -14,7 +14,7 @@ import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyF
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { getSecret, getSetting, inboxItems, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, cardJql, currentDocs, hasAnswer, markdownName, missing, toAdf } from '../src/integrations/jira.ts';
+import { adfToText, cardJql, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -1159,15 +1159,21 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.equal(read('agents.developer').label, 'build-me');
   // The card's flow is shared too: the Developer's start and blocked moves (an empty one stays empty), and a hand-off
   // back to the status the JQL names.
-  const flow = { readyJql: 'statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '', readyTransition: 'Ready for AI', worklog: false };
+  const flow = { readyJql: 'statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '', reviewTransition: '', readyTransition: 'Ready for AI', worklog: false };
   assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
   assert.deepEqual(getSetting<Record<string, unknown>>('jira', {}), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
   assert.equal(cardJql('agent-spec'), 'labels = "agent-spec" AND (statusCategory != Done AND status = "Ready for AI")');
   assert.throws(() => write('jira', { ...read('jira'), readyJql: ' ' }), /readyJql is required/);
   // Saved with the shared JQL but before the flow: the flow is added, the JQL kept.
   putSetting('jira', { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done' });
-  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', readyTransition: '', worklog: false });
+  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', reviewTransition: '', readyTransition: '', worklog: false });
   assert.equal(write('jira', { ...read('jira'), readyTransition: 'Ready for AI' }).readyTransition, 'Ready for AI');
+  // Waiting for an approval goes where waiting for people does, unless it has a status of its own.
+  write('jira', { ...read('jira'), blockedTransition: 'Blocked', reviewTransition: '' });
+  assert.equal(flowStatus('review'), 'Blocked');
+  write('jira', { ...read('jira'), reviewTransition: 'Ready For Review' });
+  assert.equal(flowStatus('review'), 'Ready For Review');
+  assert.equal(flowStatus('blocked'), 'Blocked');
   putSetting('jira', rawJira);
   putSetting('agents.developer', rawDev);
   assert.equal(readyFromTrigger('labels = "agent-ready" AND statusCategory != Done'), 'statusCategory != Done');

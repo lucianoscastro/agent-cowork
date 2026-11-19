@@ -252,16 +252,18 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     if (changed) await jira.attach(key, [...after].map(([name, text]) => ({ name, type: name.endsWith('.html') ? 'text/html' : 'text/markdown', data: Buffer.from(text) })));
     // The sub-tasks only mirror the tasks: the hand-off goes on without them when Jira refuses.
     if (cfg.subtasks && !discovery) await syncSubtasks(run, key, tasks).catch((err) => run.event('warn', 'The sub-tasks were not updated', (err as Error).message));
-    const attachedNote = `${BOT_MARK} ${discovery ? 'Discovery' : 'Spec'} documents ${changed ? 'attached' : 'unchanged'}: ${docs.join(', ')}\n\n${spec.summary}${notes}`;
+    const attachedNote = `${discovery ? 'Discovery' : 'Spec'} documents ${changed ? 'attached' : 'unchanged'}: ${docs.join(', ')}\n\n${spec.summary}${notes}`;
     if (cfg.approval || discovery) {
       const mockups = docs.filter((n) => n.endsWith('.html'));
       const tryIt = mockups.length ? `\n\nPrototype: download ${mockups.join(', ')} and open it in a browser to click through the screens.${discovery ? '' : ' The criteria in spec.md decide where they differ.'}` : '';
       const then = discovery ? 'approve the discovery (its cards are then created as children of this one)' : 'hand the card to the Developer';
-      const { created } = await jira.comment(key, `${attachedNote}${tryIt}\n\nWaiting for approval: reply with only "approved" (or "aprovado", "aprobado") to ${then}, or comment what to change and a new version follows.`);
-      await jira.moveCard(key, 'blocked');
+      // What people are asked comes first, before the summary: this is the proposal, finished and reviewed.
+      const ask = `READY FOR REVIEW: the ${discovery ? 'discovery' : 'spec'} below is the finished proposal, reviewed and waiting for your approval. Reply with only "approved" (or "aprovado", "aprobado") to ${then}, or comment what to change and a new version follows.`;
+      const { created } = await jira.comment(key, `${BOT_MARK} ${ask}\n\n${attachedNote}${tryIt}`);
+      await jira.moveCard(key, 'review');
       return { status: 'waiting', summary: `Waiting for a person to approve ${docs.join(', ')} on ${key}: ${spec.title}`, data: { waitingSince: created, approval: true, discovery } };
     }
-    await jira.comment(key, `${attachedNote}\n\nHanded to the Developer (label ${ready}). To change the spec, comment what to change and put the label ${cfg.label} back.`);
+    await jira.comment(key, `${BOT_MARK} ${attachedNote}\n\nHanded to the Developer (label ${ready}). To change the spec, comment what to change and put the label ${cfg.label} back.`);
     await handOff(run, key);
     return { status: 'done', summary: `${changed ? 'attached' : 'kept'} ${docs.join(', ')} on ${key} and handed it to the Developer: ${spec.title}` };
   } finally {

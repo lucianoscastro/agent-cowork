@@ -105,8 +105,11 @@ export function Integrations() {
           <Field label="When an agent takes it">
             <Text value={jira.startTransition} onChange={(startTransition) => setJira({ ...jira, startTransition })} placeholder="leave unchanged" />
           </Field>
-          <Field label="While waiting for people" hint="Questions, or an approval of the documents.">
+          <Field label="While waiting for people" hint="Their answers to the agent's questions.">
             <Text value={jira.blockedTransition} onChange={(blockedTransition) => setJira({ ...jira, blockedTransition })} placeholder="leave unchanged" />
+          </Field>
+          <Field label="While waiting for approval" hint="A finished proposal people approve, or comment to change.">
+            <Text value={jira.reviewTransition} onChange={(reviewTransition) => setJira({ ...jira, reviewTransition })} placeholder="as waiting for people" />
           </Field>
           <Field label="When handed to another agent" hint="Where the JQL finds it again: needed when the JQL names a status.">
             <Text value={jira.readyTransition} onChange={(readyTransition) => setJira({ ...jira, readyTransition })} placeholder="leave unchanged" />

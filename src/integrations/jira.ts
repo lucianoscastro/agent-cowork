@@ -163,9 +163,17 @@ export function transition(key: string, name: string): Promise<void> {
   return transitionBy(key, `"${name}"`, (t) => t.name.toLowerCase() === wanted || t.to.name.toLowerCase() === wanted, (status) => status.toLowerCase() === wanted);
 }
 
-/** Moves a card along the flow every agent shares (Setup → Accounts → Jira): taken, waiting for people, handed over. */
-export function moveCard(key: string, step: 'start' | 'blocked' | 'ready'): Promise<void> {
-  const name = read('jira')[`${step}Transition`];
+export type FlowStep = 'start' | 'blocked' | 'review' | 'ready';
+
+/** Where a step of the shared flow moves a card: waiting for an approval goes where waiting for people does, unless set. */
+export function flowStatus(step: FlowStep): string {
+  const flow = read('jira');
+  return step === 'review' ? flow.reviewTransition || flow.blockedTransition : flow[`${step}Transition`];
+}
+
+/** Moves a card along the flow every agent shares (Setup → Accounts → Jira): taken, waiting for people or their approval, handed over. */
+export function moveCard(key: string, step: FlowStep): Promise<void> {
+  const name = flowStatus(step);
   return name ? transition(key, name) : Promise.resolve();
 }
 
@@ -305,6 +313,7 @@ export async function checkBoard(boardId: string): Promise<Check[]> {
   const wantedStatuses: [string, string][] = [
     ['Agents · when taken', flow.startTransition],
     ['Agents · waiting for people', flow.blockedTransition],
+    ['Agents · waiting for approval', flow.reviewTransition],
     ['Agents · handed to another agent', flow.readyTransition],
     ['Developer · PRs open', dev.doneTransition],
     ['Developer · PRs merged', dev.mergedTransition],

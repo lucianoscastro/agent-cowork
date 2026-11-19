@@ -98,9 +98,9 @@ export type Settings = {
   github: { gitName: string; gitEmail: string };
   // readyJql: the cards any agent may take from a board (e.g. a status); each agent adds its own label.
   // The card's way through the board, the same for every agent that takes cards (a transition or status name; empty
-  // leaves it): taken, waiting for people (questions or an approval), and handed to another agent, back where its
-  // JQL finds it. worklog: each live run on a card logs its time there (Jira work log), with its runtimes, tokens and cost.
-  jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; readyTransition: string; worklog: boolean };
+  // leaves it): taken, waiting for people's answers, waiting for their approval of a finished proposal (empty: as
+  // waiting for people), and handed to another agent, back where its JQL finds it. worklog: each live run on a card logs its time there (Jira work log), with its runtimes, tokens and cost.
+  jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; reviewTransition: string; readyTransition: string; worklog: boolean };
   // What the webhook (a secret) is told about, and the UI's address for links in the messages (optional).
   notifications: { uiUrl: string; events: Record<NotifyEvent, boolean> };
   'providers.claude': { authMethod: AuthMethod; defaultModel: string };
@@ -188,7 +188,7 @@ export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 export const DEFAULTS: Settings = {
   general: { language: 'en-US', pollSeconds: 300, fallback: true },
   github: { gitName: 'agentCowork', gitEmail: '' },
-  jira: { url: '', email: '', readyJql: 'statusCategory != Done', startTransition: 'In Progress', blockedTransition: 'Blocked', readyTransition: '', worklog: false },
+  jira: { url: '', email: '', readyJql: 'statusCategory != Done', startTransition: 'In Progress', blockedTransition: 'Blocked', reviewTransition: '', readyTransition: '', worklog: false },
   notifications: { uiUrl: '', events: { inbox: true, pr: true, limit: true, merged: false } },
   'providers.claude': { authMethod: 'account', defaultModel: 'sonnet' },
   'providers.codex': { authMethod: 'account', defaultModel: '' },
@@ -586,6 +586,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           readyJql: str(o, 'readyJql', key, { required: true, max: 500 }),
           startTransition: str(o, 'startTransition', key, { max: 100 }),
           blockedTransition: str(o, 'blockedTransition', key, { max: 100 }),
+          reviewTransition: str(o, 'reviewTransition', key, { max: 100 }),
           readyTransition: str(o, 'readyTransition', key, { max: 100 }),
           worklog: bool(o, 'worklog', key),
         };

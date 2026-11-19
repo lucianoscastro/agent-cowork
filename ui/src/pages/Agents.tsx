@@ -74,6 +74,7 @@ function SharedJql({ jira }: { jira: Sections['jira'] }) {
     [
       ['taken', jira.startTransition],
       ['waiting for people', jira.blockedTransition],
+      ['waiting for approval', jira.reviewTransition || jira.blockedTransition],
       ['handed over', jira.readyTransition],
     ] as const
   ).filter(([, to]) => to);
