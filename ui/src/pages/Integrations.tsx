@@ -99,6 +99,18 @@ export function Integrations() {
           <Field label="Cards the agents take (JQL)" hint='Shared by every agent that takes cards from a board, each adding its own label (the Developer agent-ready, the Product Manager agent-spec and agent-discovery). For example: statusCategory != Done AND status = "Ready for AI".'>
             <Text value={jira.readyJql} onChange={(readyJql) => setJira({ ...jira, readyJql })} placeholder="statusCategory != Done" />
           </Field>
+        </div>
+        <p className="small muted">{t('How a card moves on the board, the same for every agent (a transition or status name; empty leaves it where it is):')}</p>
+        <div className="row fields">
+          <Field label="When an agent takes it">
+            <Text value={jira.startTransition} onChange={(startTransition) => setJira({ ...jira, startTransition })} placeholder="leave unchanged" />
+          </Field>
+          <Field label="While waiting for people" hint="Questions, or an approval of the documents.">
+            <Text value={jira.blockedTransition} onChange={(blockedTransition) => setJira({ ...jira, blockedTransition })} placeholder="leave unchanged" />
+          </Field>
+          <Field label="When handed to another agent" hint="Where the JQL finds it again: needed when the JQL names a status.">
+            <Text value={jira.readyTransition} onChange={(readyTransition) => setJira({ ...jira, readyTransition })} placeholder="leave unchanged" />
+          </Field>
           <Button variant="primary" busy={j.busy} onClick={() => j.run(async () => (await saveSection('jira', jira), reload()))}>
             Save
           </Button>

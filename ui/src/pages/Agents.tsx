@@ -68,11 +68,25 @@ const DRY_RUN_NOTE =
   'In dry run an agent does all the work (models, verification) but writes nothing to GitHub or Jira; take agents live one at a time. Dry runs keep their own history, so going live does not skip real work.';
 
 /** The JQL every agent that takes cards shares, shown under each agent's own labels. */
-function SharedJql({ jql }: { jql: string }) {
+function SharedJql({ jira }: { jira: Sections['jira'] }) {
   const t = useT();
+  const flow = (
+    [
+      ['taken', jira.startTransition],
+      ['waiting for people', jira.blockedTransition],
+      ['handed over', jira.readyTransition],
+    ] as const
+  ).filter(([, to]) => to);
   return (
     <p className="small muted">
-      {t('Labels apply within the JQL every agent shares:')} <code>{jql}</code> · <a href="#/accounts">{t('Edit in Setup → Accounts')}</a>
+      {t('Labels apply within the JQL every agent shares:')} <code>{jira.readyJql}</code>
+      {flow.length > 0 && (
+        <>
+          {' · '}
+          {t('the card moves:')} {flow.map(([when, to], i) => <span key={when}>{i > 0 && ', '}{t(when)} → <code>{to}</code></span>)}
+        </>
+      )}{' '}
+      · <a href="#/accounts">{t('Edit in Setup → Accounts')}</a>
     </p>
   );
 }
@@ -118,7 +132,7 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
               <Text value={pm.discoveryLabel} onChange={(discoveryLabel) => setPm({ ...pm, discoveryLabel })} placeholder="agent-discovery" />
             </Field>
           </div>
-          <SharedJql jql={settings.sections.jira.readyJql} />
+          <SharedJql jira={settings.sections.jira} />
           <h3>{t('Documents')}</h3>
           <Toggle checked={pm.subtasks} onChange={(subtasks) => setPm({ ...pm, subtasks })} label="A Jira sub-task per task (T1: …), moved by the Developer as it builds each one" />
           <Toggle checked={pm.approval} onChange={(approval) => setPm({ ...pm, approval })} label='A person approves the spec on the card before it goes to the Developer (a comment with only "approved"; any other comment asks for a new version). A card that changes a screen also gets a clickable HTML prototype' />
@@ -161,14 +175,8 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
               <Text value={developer.label} onChange={(label) => setDeveloper({ ...developer, label })} placeholder="agent-ready" />
             </Field>
           </div>
-          <SharedJql jql={settings.sections.jira.readyJql} />
+          <SharedJql jira={settings.sections.jira} />
           <div className="row fields">
-            <Field label="When picked, move to">
-              <Text value={developer.startTransition} onChange={(startTransition) => setDeveloper({ ...developer, startTransition })} />
-            </Field>
-            <Field label="While waiting for a human">
-              <Text value={developer.blockedTransition} onChange={(blockedTransition) => setDeveloper({ ...developer, blockedTransition })} />
-            </Field>
             <Field label="When PRs are open">
               <Text value={developer.doneTransition} onChange={(doneTransition) => setDeveloper({ ...developer, doneTransition })} placeholder="leave unchanged" />
             </Field>

@@ -97,7 +97,10 @@ export type Settings = {
   general: { language: Language; pollSeconds: number; fallback: boolean };
   github: { gitName: string; gitEmail: string };
   // readyJql: the cards any agent may take from a board (e.g. a status); each agent adds its own label.
-  jira: { url: string; email: string; readyJql: string };
+  // The card's way through the board, the same for every agent that takes cards (a transition or status name; empty
+  // leaves it): taken, waiting for people (questions or an approval), and handed to another agent, back where its
+  // JQL finds it.
+  jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; readyTransition: string };
   // What the webhook (a secret) is told about, and the UI's address for links in the messages (optional).
   notifications: { uiUrl: string; events: Record<NotifyEvent, boolean> };
   'providers.claude': { authMethod: AuthMethod; defaultModel: string };
@@ -154,8 +157,6 @@ export type Settings = {
     enabled: boolean;
     // The label of the cards it takes, within the shared jira.readyJql.
     label: string;
-    startTransition: string;
-    blockedTransition: string;
     doneTransition: string;
     // Where the card goes when its PRs are merged (the agent stops following them then).
     mergedTransition: string;
@@ -187,7 +188,7 @@ export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 export const DEFAULTS: Settings = {
   general: { language: 'en-US', pollSeconds: 300, fallback: true },
   github: { gitName: 'agentCowork', gitEmail: '' },
-  jira: { url: '', email: '', readyJql: 'statusCategory != Done' },
+  jira: { url: '', email: '', readyJql: 'statusCategory != Done', startTransition: 'In Progress', blockedTransition: 'Blocked', readyTransition: '' },
   notifications: { uiUrl: '', events: { inbox: true, pr: true, limit: true, merged: false } },
   'providers.claude': { authMethod: 'account', defaultModel: 'sonnet' },
   'providers.codex': { authMethod: 'account', defaultModel: '' },
@@ -254,8 +255,6 @@ export const DEFAULTS: Settings = {
     enabled: false,
     dryRun: true,
     label: 'agent-ready',
-    startTransition: 'In Progress',
-    blockedTransition: 'Blocked',
     doneTransition: '',
     mergedTransition: '',
     draft: true,
@@ -333,12 +332,21 @@ export function read<K extends SectionKey>(key: K): Settings[K] {
       secondReviewer: { ...d.secondReviewer, ...pm.secondReviewer },
     } as Settings[K];
   }
-  // Saved before the shared JQL: the Developer's trigger JQL without its label, which applied to every card it took.
-  // Stored at once, so saving the Developer (which drops its old trigger JQL) cannot lose it.
+  // Saved before the shared JQL and card flow: the Developer's trigger JQL without its label, which applied to every
+  // card it took, and its start and blocked transitions; a hand-off goes back to the status the JQL names. Stored at
+  // once, so saving the Developer (which drops its old fields) cannot lose them.
   const saved = key === 'jira' ? getSetting<Partial<Settings['jira']>>(key, {}) : {};
-  if (Object.keys(saved).length && saved.readyJql === undefined) {
-    const old = getSetting<{ triggerJql?: string }>('agents.developer', {}).triggerJql;
-    const jira = { ...DEFAULTS.jira, ...saved, readyJql: (old && readyFromTrigger(old)) || DEFAULTS.jira.readyJql };
+  if (Object.keys(saved).length && (saved.readyJql === undefined || saved.startTransition === undefined)) {
+    const dev = getSetting<{ triggerJql?: string; startTransition?: string; blockedTransition?: string }>('agents.developer', {});
+    const readyJql = saved.readyJql ?? ((dev.triggerJql && readyFromTrigger(dev.triggerJql)) || DEFAULTS.jira.readyJql);
+    const jira = {
+      ...DEFAULTS.jira,
+      startTransition: dev.startTransition ?? DEFAULTS.jira.startTransition,
+      blockedTransition: dev.blockedTransition ?? DEFAULTS.jira.blockedTransition,
+      readyTransition: readyStatus(readyJql) ?? '',
+      ...saved,
+      readyJql,
+    };
     putSetting('jira', jira);
     return jira as Settings[K];
   }
@@ -356,6 +364,12 @@ export const readyFromTrigger = (jql: string): string | undefined =>
     .replace(/\s+AND\s+AND\s+/i, ' AND ')
     .replace(/^\s*AND\s+|\s+AND\s*$/gi, '')
     .trim() || undefined;
+
+/** The one status a JQL asks for (`status = "Ready for AI"`), if it names one. Exported for tests. */
+export const readyStatus = (jql: string): string | undefined => {
+  const m = /\bstatus\s*=\s*(?:"([^"]+)"|'([^']+)'|([\w-]+))/i.exec(jql);
+  return m?.[1] ?? m?.[2] ?? m?.[3];
+};
 
 /** Validates a section sent by the UI and stores it; throws with a readable message when invalid. */
 export function write<K extends SectionKey>(key: K, value: unknown): Settings[K] {
@@ -566,7 +580,14 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
       case 'jira': {
         const url = str(o, 'url', key, { max: 300 }).replace(/\/$/, '');
         if (url && !/^https:\/\/[\w.-]+(:\d+)?$/.test(url)) throw new Error('jira.url must look like https://your-site.atlassian.net');
-        return { url, email: str(o, 'email', key, { max: 200 }), readyJql: str(o, 'readyJql', key, { required: true, max: 500 }) };
+        return {
+          url,
+          email: str(o, 'email', key, { max: 200 }),
+          readyJql: str(o, 'readyJql', key, { required: true, max: 500 }),
+          startTransition: str(o, 'startTransition', key, { max: 100 }),
+          blockedTransition: str(o, 'blockedTransition', key, { max: 100 }),
+          readyTransition: str(o, 'readyTransition', key, { max: 100 }),
+        };
       }
       case 'notifications': {
         const uiUrl = str(o, 'uiUrl', key, { max: 300 }).replace(/\/$/, '');
@@ -661,8 +682,6 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
         return {
           enabled: bool(o, 'enabled', key),
           label: jiraLabel(o, key),
-          startTransition: str(o, 'startTransition', key, { max: 100 }),
-          blockedTransition: str(o, 'blockedTransition', key, { max: 100 }),
           doneTransition: str(o, 'doneTransition', key, { max: 100 }),
           mergedTransition: str(o, 'mergedTransition', key, { max: 100 }),
           draft: bool(o, 'draft', key),

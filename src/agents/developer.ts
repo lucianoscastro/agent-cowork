@@ -201,7 +201,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
   const cfg = read('agents.developer');
   const language = outputLanguage();
   const issue = await jira.getIssue(key);
-  if (!dryRun && cfg.startTransition) await jira.transition(key, cfg.startTransition);
+  if (!dryRun) await jira.moveCard(key, 'start');
 
   /** Posts to the card, moves it to Blocked, and ends the run waiting for a human comment. */
   const block = async (status: 'waiting' | 'parked', text: string, intro?: string): Promise<RunEnd> => {
@@ -211,7 +211,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       ? 'agentCowork needs more information to continue. Reply in a comment and it will resume.'
       : 'agentCowork stopped and needs a human. Reply in a comment to resume, or take the card over.';
     const { created } = await jira.comment(key, `${BOT_MARK} ${intro}\n\n${text}`);
-    if (cfg.blockedTransition) await jira.transition(key, cfg.blockedTransition);
+    await jira.moveCard(key, 'blocked');
     return { status, summary: text, data: { waitingSince: created } };
   };
 
@@ -261,9 +261,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       if (dryRun) return { status: 'waiting', summary: `would send the card back to the Product Manager:\n\n${text}`, data: { waitingSince: new Date().toISOString() } };
       await jira.comment(key, `${BOT_MARK} ${HAND_BACK}. What does not hold:\n\n${text}`);
       await jira.relabel(key, [cfg.label], [pm.label]);
-      // The shared JQL may take only cards in a status (Ready for AI): the card goes back to the one it was taken in.
-      // ponytail: a run resumed from Blocked sends it back to Blocked; then a person moves it for the Product Manager.
-      if (cfg.startTransition) await jira.transition(key, issue.fields.status.name).catch((err) => run.event('warn', `The card was not moved back to ${issue.fields.status.name}: a person moves it for the Product Manager to take it`, (err as Error).message));
+      // The shared JQL may take only cards in a status (Ready for AI): the card goes back there.
+      await jira.moveCard(key, 'ready').catch((err) => run.event('warn', 'The card was not moved for the Product Manager: a person moves it where the shared JQL finds it', (err as Error).message));
       wake('pm');
       return { status: 'done', summary: `sent back to the Product Manager: ${text}`, data: { handedBack: true } };
     };

@@ -154,18 +154,28 @@ export async function saveDiscovery(issue: Issue, dir: string): Promise<{ key: s
   return undefined;
 }
 
-/** Accepts either the transition name or its target status name, case-insensitively. */
+/**
+ * Accepts either the transition name or its target status name, case-insensitively. A card already in that status
+ * (a resumed or retried run) stays, as no transition leads to it.
+ */
 export function transition(key: string, name: string): Promise<void> {
   const wanted = name.toLowerCase();
-  return transitionBy(key, `"${name}"`, (t) => t.name.toLowerCase() === wanted || t.to.name.toLowerCase() === wanted);
+  return transitionBy(key, `"${name}"`, (t) => t.name.toLowerCase() === wanted || t.to.name.toLowerCase() === wanted, (status) => status.toLowerCase() === wanted);
+}
+
+/** Moves a card along the flow every agent shares (Setup → Accounts → Jira): taken, waiting for people, handed over. */
+export function moveCard(key: string, step: 'start' | 'blocked' | 'ready'): Promise<void> {
+  const name = read('jira')[`${step}Transition`];
+  return name ? transition(key, name) : Promise.resolve();
 }
 
 /** Moves an issue to the first status of a category (`indeterminate`: in progress, `done`), whatever the workflow names it. */
 export const moveTo = (key: string, category: 'indeterminate' | 'done') => transitionBy(key, `to a ${category} status`, (t) => t.to.statusCategory?.key === category);
 
-async function transitionBy(key: string, what: string, pick: (t: Transition) => boolean): Promise<void> {
+async function transitionBy(key: string, what: string, pick: (t: Transition) => boolean, there?: (status: string) => boolean): Promise<void> {
   const { transitions } = await api<{ transitions: Transition[] }>(`api/3/issue/${key}/transitions`);
   const match = transitions.find(pick);
+  if (!match && there && there((await api<{ fields: { status: { name: string } } }>(`api/3/issue/${key}?fields=status`)).fields.status.name)) return;
   if (!match) throw new Error(`${key}: no transition ${what} (available: ${transitions.map((t) => t.name).join(', ')})`);
   await api(`api/3/issue/${key}/transitions`, { method: 'POST', body: { transition: { id: match.id } } });
 }
@@ -279,9 +289,11 @@ export async function checkBoard(boardId: string): Promise<Check[]> {
   const has = (list: string[], name: string) => list.some((x) => x.toLowerCase() === name.toLowerCase());
 
   const dependabot = read('agents.dependabot');
+  const flow = read('jira');
   const wantedStatuses: [string, string][] = [
-    ['Developer · when picked', dev.startTransition],
-    ['Developer · waiting for a human', dev.blockedTransition],
+    ['Agents · when taken', flow.startTransition],
+    ['Agents · waiting for people', flow.blockedTransition],
+    ['Agents · handed to another agent', flow.readyTransition],
     ['Developer · PRs open', dev.doneTransition],
     ['Developer · PRs merged', dev.mergedTransition],
     ['Dependabot · CI card moves to', dependabot.cardTransition],

@@ -112,10 +112,12 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
   const mine = issue.fields.labels.filter((l) => [cfg.label, cfg.discoveryLabel].some((x) => x.toLowerCase() === l.toLowerCase()));
   const discovery = posted ?? mine.some((l) => l.toLowerCase() === cfg.discoveryLabel.toLowerCase());
   const main = discovery ? 'discovery.md' : 'spec.md';
+  const verdict = approvalSince && approvalOf(issue.fields.comment.comments, approvalSince);
+  // Put back in the queue with nothing new on the card (Retry, a restart): it keeps waiting.
+  if (approvalSince && !verdict) return { status: 'waiting', summary: `Waiting for a person to approve the ${discovery ? 'discovery' : 'spec'} on ${key}`, data: { waitingSince: approvalSince, approval: true, discovery } };
+  // Taken, as every agent takes a card, out of the waiting status too; an approved discovery stays in it while its cards are built.
+  if (!dryRun) await jira.moveCard(key, 'start');
   if (approvalSince) {
-    const verdict = approvalOf(issue.fields.comment.comments, approvalSince);
-    // Put back in the queue with nothing new on the card (Retry, a restart): it keeps waiting.
-    if (!verdict) return { status: 'waiting', summary: `Waiting for a person to approve the ${discovery ? 'discovery' : 'spec'} on ${key}`, data: { waitingSince: approvalSince, approval: true, discovery } };
     if (verdict === 'approved' && discovery) {
       run.stage('Hand-off');
       // Nothing is built from a discovery: both labels come off, so it is never specified itself, and people create the
@@ -127,7 +129,7 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     if (verdict === 'approved') {
       run.stage('Hand-off');
       // The label first: a retry after a Jira error never posts the note twice, and a lost note only warns.
-      await handOff(key);
+      await handOff(run, key);
       await jira.comment(key, `${BOT_MARK} Spec approved. Handed to the Developer (label ${readyLabel()}). To change the spec, comment what to change and put the label ${cfg.label} back.`).catch((err) => run.event('warn', 'The approval note was not posted', (err as Error).message));
       return { status: 'done', summary: `the spec of ${key} was approved on the card and handed to the Developer` };
     }
@@ -256,10 +258,11 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
       const tryIt = mockups.length ? `\n\nPrototype: download ${mockups.join(', ')} and open it in a browser to click through the screens.${discovery ? '' : ' The criteria in spec.md decide where they differ.'}` : '';
       const then = discovery ? 'approve the discovery (its cards are then created as children of this one)' : 'hand the card to the Developer';
       const { created } = await jira.comment(key, `${attachedNote}${tryIt}\n\nWaiting for approval: reply with only "approved" (or "aprovado", "aprobado") to ${then}, or comment what to change and a new version follows.`);
+      await jira.moveCard(key, 'blocked');
       return { status: 'waiting', summary: `Waiting for a person to approve ${docs.join(', ')} on ${key}: ${spec.title}`, data: { waitingSince: created, approval: true, discovery } };
     }
     await jira.comment(key, `${attachedNote}\n\nHanded to the Developer (label ${ready}). To change the spec, comment what to change and put the label ${cfg.label} back.`);
-    await handOff(key);
+    await handOff(run, key);
     return { status: 'done', summary: `${changed ? 'attached' : 'kept'} ${docs.join(', ')} on ${key} and handed it to the Developer: ${spec.title}` };
   } finally {
     for (const r of repos) await removeCheckout(r).catch(() => {});
@@ -346,12 +349,14 @@ async function syncSubtasks(run: Run, key: string, tasks: Task[]): Promise<void>
 }
 
 /**
- * Swaps the trigger label for the Developer's and wakes it: its next poll starts now instead of after the interval.
- * A discovery label goes too, so the card is never taken back as a discovery.
+ * Swaps the trigger label for the Developer's, moves the card back where the shared JQL finds it, and wakes the
+ * Developer: its next poll starts now instead of after the interval. A discovery label goes too, so the card is never
+ * taken back as a discovery.
  */
-async function handOff(key: string): Promise<void> {
+async function handOff(run: Run, key: string): Promise<void> {
   const { label, discoveryLabel } = read('agents.pm');
   await jira.relabel(key, [label, discoveryLabel], [readyLabel()]);
+  await jira.moveCard(key, 'ready').catch((err) => run.event('warn', 'The card was not moved for the Developer: a person moves it where the shared JQL finds it', (err as Error).message));
   wake('developer');
 }
 
@@ -375,6 +380,7 @@ async function ask(run: Run, key: string, questions: string, dryRun: boolean, di
   run.event('artifact', 'Asked on the card', questions);
   if (dryRun) return { status: 'waiting', summary: questions, data: { waitingSince: new Date().toISOString(), discovery } };
   const { created } = await jira.comment(key, `${BOT_MARK} agentCowork needs your answers before writing the documents. Reply in one comment (for example "Q1 a, Q2 b") and it will continue.\n\n${questions}`);
+  await jira.moveCard(key, 'blocked');
   return { status: 'waiting', summary: questions, data: { waitingSince: created, discovery } };
 }
 

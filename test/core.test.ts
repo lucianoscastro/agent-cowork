@@ -10,7 +10,7 @@ import { approvalOf, lintSpec, offline, planSubtasks, save as saveSpec } from '.
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
-import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyFromTrigger, triggerLabel, validateProjects, verifyCommands, write } from '../src/config.ts';
+import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyFromTrigger, readyStatus, triggerLabel, validateProjects, verifyCommands, write } from '../src/config.ts';
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { getSecret, getSetting, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
@@ -1117,18 +1117,30 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   const rawJira = getSetting<Record<string, unknown>>('jira', {});
   const rawDev = getSetting<Record<string, unknown>>('agents.developer', {});
   const { label: _label, ...devBefore } = read('agents.developer');
-  putSetting('agents.developer', { ...devBefore, triggerJql: 'labels = "build-me" AND statusCategory != Done AND status = "Ready for AI"' });
+  putSetting('agents.developer', { ...devBefore, triggerJql: 'labels = "build-me" AND statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '' });
   putSetting('jira', { url: 'https://acme.atlassian.net', email: 'bot@acme.example' });
   assert.equal(read('agents.developer').label, 'build-me');
-  assert.equal(read('jira').readyJql, 'statusCategory != Done AND status = "Ready for AI"');
-  assert.equal(getSetting<Record<string, unknown>>('jira', {}).readyJql, 'statusCategory != Done AND status = "Ready for AI"');
+  // The card's flow is shared too: the Developer's start and blocked moves (an empty one stays empty), and a hand-off
+  // back to the status the JQL names.
+  const flow = { readyJql: 'statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '', readyTransition: 'Ready for AI' };
+  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
+  assert.deepEqual(getSetting<Record<string, unknown>>('jira', {}), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
   assert.equal(cardJql('agent-spec'), 'labels = "agent-spec" AND (statusCategory != Done AND status = "Ready for AI")');
   assert.throws(() => write('jira', { ...read('jira'), readyJql: ' ' }), /readyJql is required/);
+  // Saved with the shared JQL but before the flow: the flow is added, the JQL kept.
+  putSetting('jira', { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done' });
+  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', readyTransition: '' });
+  assert.equal(write('jira', { ...read('jira'), readyTransition: 'Ready for AI' }).readyTransition, 'Ready for AI');
   putSetting('jira', rawJira);
   putSetting('agents.developer', rawDev);
   assert.equal(readyFromTrigger('labels = "agent-ready" AND statusCategory != Done'), 'statusCategory != Done');
   assert.equal(readyFromTrigger('statusCategory != Done AND labels in (a, b) AND status = "To Do"'), 'statusCategory != Done AND status = "To Do"');
   assert.equal(readyFromTrigger('labels = agent-ready'), undefined);
+  assert.equal(readyStatus('statusCategory != Done AND status = "Ready for AI"'), 'Ready for AI');
+  assert.equal(readyStatus("status = 'To Do'"), 'To Do');
+  assert.equal(readyStatus('status = Backlog AND statusCategory != Done'), 'Backlog');
+  assert.equal(readyStatus('statusCategory != Done'), undefined);
+  assert.equal(readyStatus('status in ("A", "B")'), undefined);
   assert.throws(() => write('agents.pm', { ...pm, discoveryLabel: 'a b") OR labels = "x' }), /discoveryLabel must be one Jira label/);
 
   // Attachments are saved under their own name: never a path.

@@ -134,7 +134,7 @@ export type Sections = {
   general: { language: 'en-US' | 'pt-BR' | 'es-ES'; pollSeconds: number; fallback: boolean };
   github: { gitName: string; gitEmail: string };
   /** readyJql: the cards any agent may take from a board; each agent adds its own label. */
-  jira: { url: string; email: string; readyJql: string };
+  jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; readyTransition: string };
   notifications: { uiUrl: string; events: Record<NotifyEvent, boolean> };
   'providers.claude': { authMethod: 'api-key' | 'account'; defaultModel: string };
   'providers.codex': { authMethod: 'api-key' | 'account'; defaultModel: string };
@@ -182,8 +182,6 @@ export type Sections = {
   'agents.developer': Shadow & {
     enabled: boolean;
     label: string;
-    startTransition: string;
-    blockedTransition: string;
     doneTransition: string;
     mergedTransition: string;
     draft: boolean;
