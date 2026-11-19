@@ -67,6 +67,16 @@ const CI_FAILS_NOTE =
 const DRY_RUN_NOTE =
   'In dry run an agent does all the work (models, verification) but writes nothing to GitHub or Jira; take agents live one at a time. Dry runs keep their own history, so going live does not skip real work.';
 
+/** The JQL every agent that takes cards shares, shown under each agent's own labels. */
+function SharedJql({ jql }: { jql: string }) {
+  const t = useT();
+  return (
+    <p className="small muted">
+      {t('Labels apply within the JQL every agent shares:')} <code>{jql}</code> · <a href="#/accounts">{t('Edit in Setup → Accounts')}</a>
+    </p>
+  );
+}
+
 /** One agent's settings form; saving applies on the agent's next poll. */
 function AgentSettings({ id, settings, reload }: { id: AgentId; settings: SettingsResponse; reload: () => Promise<void> }) {
   const t = useT();
@@ -94,17 +104,22 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'pm':
       return (
         <Card>
-          <div className="row fields">
+          <div className="row fields short">
+            <Field label="Cards in parallel" hint="Across all projects, the same project included. Each card has its own checkout and branch.">
+              <Num value={pm.concurrency} min={1} max={4} onChange={(concurrency) => setPm({ ...pm, concurrency })} />
+            </Field>
+          </div>
+          <h3>{t('Trigger and Jira flow')}</h3>
+          <div className="row fields short">
             <Field label="Trigger label" hint="The Jira label that sends a card to the Product Manager; at the hand-off it is swapped for the Developer's label.">
               <Text value={pm.label} onChange={(label) => setPm({ ...pm, label })} placeholder="agent-spec" />
             </Field>
             <Field label="Discovery label" hint="A card with this label, usually an epic, gets a discovery instead: discovery.md and clickable prototypes of the main screens, for a person to approve on the card. Nothing is built from it; its stories and tasks, with the trigger label, are specified from it.">
               <Text value={pm.discoveryLabel} onChange={(discoveryLabel) => setPm({ ...pm, discoveryLabel })} placeholder="agent-discovery" />
             </Field>
-            <Field label="Cards in parallel" hint="Across all projects, the same project included. Each card has its own checkout and branch.">
-              <Num value={pm.concurrency} min={1} max={4} onChange={(concurrency) => setPm({ ...pm, concurrency })} />
-            </Field>
           </div>
+          <SharedJql jql={settings.sections.jira.readyJql} />
+          <h3>{t('Documents')}</h3>
           <Toggle checked={pm.subtasks} onChange={(subtasks) => setPm({ ...pm, subtasks })} label="A Jira sub-task per task (T1: …), moved by the Developer as it builds each one" />
           <Toggle checked={pm.approval} onChange={(approval) => setPm({ ...pm, approval })} label='A person approves the spec on the card before it goes to the Developer (a comment with only "approved"; any other comment asks for a new version). A card that changes a screen also gets a clickable HTML prototype' />
           <h3>{t('Team')}</h3>
@@ -135,15 +150,18 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
     case 'developer':
       return (
         <Card>
-          <div className="row fields">
+          <div className="row fields short">
             <Field label="Cards in parallel" hint="Across all projects, the same project included. Each card has its own checkout and branch.">
               <Num value={developer.concurrency} min={1} max={4} onChange={(concurrency) => setDeveloper({ ...developer, concurrency })} />
             </Field>
           </div>
           <h3>{t('Trigger and Jira flow')}</h3>
-          <Field label="Trigger label" hint="The Jira label that sends a card to the Developer, within the JQL every agent shares (GitHub and Jira → Jira).">
-            <Text value={developer.label} onChange={(label) => setDeveloper({ ...developer, label })} placeholder="agent-ready" />
-          </Field>
+          <div className="row fields short">
+            <Field label="Trigger label" hint="The Jira label that sends a card to the Developer.">
+              <Text value={developer.label} onChange={(label) => setDeveloper({ ...developer, label })} placeholder="agent-ready" />
+            </Field>
+          </div>
+          <SharedJql jql={settings.sections.jira.readyJql} />
           <div className="row fields">
             <Field label="When picked, move to">
               <Text value={developer.startTransition} onChange={(startTransition) => setDeveloper({ ...developer, startTransition })} />

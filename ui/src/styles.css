@@ -99,6 +99,8 @@ time, td.num, .num, .check-time, .tile-value { font-variant-numeric: tabular-num
 .row.fields { align-items: flex-start; }
 .row.fields > .btn, .row.fields > .message { margin-top: 29px; }
 .row.fields > .field { flex: 1 1 220px; }
+/* Short values (a count, a label): the same width in every form, never stretched alone across the row. */
+.row.fields.short > .field { flex: 0 1 280px; }
 .filters { margin-bottom: 12px; }
 .filters .field { flex: 0 1 260px; }
 .spacer { flex: 1; }
