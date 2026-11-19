@@ -210,7 +210,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     intro ??= status === 'waiting'
       ? 'agentCowork needs more information to continue. Reply in a comment and it will resume.'
       : 'agentCowork stopped and needs a human. Reply in a comment to resume, or take the card over.';
-    const { created } = await jira.comment(key, `${BOT_MARK} ${intro}\n\n${text}`);
+    const { created } = await jira.comment(key, text, { tone: 'warning', title: status === 'waiting' ? 'Your answers are needed' : 'A person is needed', text: intro });
     await jira.moveCard(key, 'blocked');
     return { status, summary: text, data: { waitingSince: created } };
   };

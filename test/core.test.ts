@@ -14,7 +14,7 @@ import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyF
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { getSecret, getSetting, inboxItems, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, cardJql, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf } from '../src/integrations/jira.ts';
+import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -32,6 +32,8 @@ import { forEachLimit, maskSecrets, renderPrompt, run as sh, safeEnv, untrusted,
 const KEY = 'test-secret-key-0123456789';
 openDb(mkdtempSync(join(tmpdir(), 'acw-db-')), KEY);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+type AdfNodeForTest = { content: unknown[] };
 
 test('secrets are encrypted at rest and round-trip', () => {
   const sealed = encrypt(KEY, 'ghp_secret');
@@ -1168,6 +1170,27 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   putSetting('jira', { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done' });
   assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', reviewTransition: '', readyTransition: '', worklog: false });
   assert.equal(write('jira', { ...read('jira'), readyTransition: 'Ready for AI' }).readyTransition, 'Ready for AI');
+  // A comment's **text** is bold, so what people must do stands out; an unpaired ** stays as typed.
+  const bold = (text: string) => ({ type: 'text', text, marks: [{ type: 'strong' }] });
+  assert.deepEqual(commentDoc('🤖 **READY FOR REVIEW** now\n\n**Reply** or 2 ** 3'), {
+    type: 'doc',
+    version: 1,
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '🤖 ' }, bold('READY FOR REVIEW'), { type: 'text', text: ' now' }] },
+      { type: 'paragraph', content: [] },
+      { type: 'paragraph', content: [bold('Reply'), { type: 'text', text: ' or 2 ** 3' }] },
+    ],
+  });
+  // What a person must do opens the comment in a colored panel with a larger title; it still reads as the bot's.
+  const called = commentDoc('Q1 which?', { tone: 'warning', title: 'Your answers are needed', text: '**Reply in one comment**' }) as AdfNodeForTest;
+  assert.deepEqual(called.content[0], {
+    type: 'panel',
+    attrs: { panelType: 'warning' },
+    content: [{ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: `${BOT_MARK} Your answers are needed` }] }, { type: 'paragraph', content: [bold('Reply in one comment')] }],
+  });
+  assert.deepEqual(called.content[1], { type: 'paragraph', content: [{ type: 'text', text: 'Q1 which?' }] });
+  assert.ok(adfToText(called as never).trimStart().startsWith(BOT_MARK));
+  assert.equal(hasAnswer([{ created: '2026-11-19T10:00:00.000+0000', body: called } as never], '2026-11-19T09:00:00.000+0000'), false);
   // Waiting for an approval goes where waiting for people does, unless it has a status of its own.
   write('jira', { ...read('jira'), blockedTransition: 'Blocked', reviewTransition: '' });
   assert.equal(flowStatus('review'), 'Blocked');

@@ -257,9 +257,12 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
       const mockups = docs.filter((n) => n.endsWith('.html'));
       const tryIt = mockups.length ? `\n\nPrototype: download ${mockups.join(', ')} and open it in a browser to click through the screens.${discovery ? '' : ' The criteria in spec.md decide where they differ.'}` : '';
       const then = discovery ? 'approve the discovery (its cards are then created as children of this one)' : 'hand the card to the Developer';
-      // What people are asked comes first, before the summary: this is the proposal, finished and reviewed.
-      const ask = `READY FOR REVIEW: the ${discovery ? 'discovery' : 'spec'} below is the finished proposal, reviewed and waiting for your approval. Reply with only "approved" (or "aprovado", "aprobado") to ${then}, or comment what to change and a new version follows.`;
-      const { created } = await jira.comment(key, `${BOT_MARK} ${ask}\n\n${attachedNote}${tryIt}`);
+      // What people are asked comes first, highlighted, before the summary: this is the proposal, finished and reviewed.
+      const { created } = await jira.comment(key, `${attachedNote}${tryIt}`, {
+        tone: 'success',
+        title: `Ready for review: the finished ${discovery ? 'discovery' : 'spec'}`,
+        text: `It is reviewed and waiting for your approval. **Reply with only "approved"** (or "aprovado", "aprobado") to ${then}, **or comment what to change** and a new version follows.`,
+      });
       await jira.moveCard(key, 'review');
       return { status: 'waiting', summary: `Waiting for a person to approve ${docs.join(', ')} on ${key}: ${spec.title}`, data: { waitingSince: created, approval: true, discovery } };
     }
@@ -381,7 +384,11 @@ export function approvalOf(comments: jira.Comment[], since: string): 'approved' 
 async function ask(run: Run, key: string, questions: string, dryRun: boolean, discovery: boolean): Promise<RunEnd> {
   run.event('artifact', 'Asked on the card', questions);
   if (dryRun) return { status: 'waiting', summary: questions, data: { waitingSince: new Date().toISOString(), discovery } };
-  const { created } = await jira.comment(key, `${BOT_MARK} agentCowork needs your answers before writing the documents. Reply in one comment (for example "Q1 a, Q2 b") and it will continue.\n\n${questions}`);
+  const { created } = await jira.comment(key, questions, {
+    tone: 'warning',
+    title: 'Your answers are needed',
+    text: 'agentCowork needs your answers before writing the documents. **Reply in one comment** (for example "Q1 a, Q2 b") and it will continue.',
+  });
   await jira.moveCard(key, 'blocked');
   return { status: 'waiting', summary: questions, data: { waitingSince: created, discovery } };
 }

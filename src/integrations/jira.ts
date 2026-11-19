@@ -188,10 +188,33 @@ async function transitionBy(key: string, what: string, pick: (t: Transition) => 
   await api(`api/3/issue/${key}/transitions`, { method: 'POST', body: { transition: { id: match.id } } });
 }
 
+/** What a person must do, above a comment's text: a colored panel with a larger title (green to approve, yellow to answer). */
+export type Callout = { tone: 'success' | 'warning'; title: string; text: string };
+
+/**
+ * A comment's document: one paragraph per line, **text** in bold (an unpaired ** stays as typed). A callout's title
+ * opens with the bot mark, so the comment still reads as the bot's. Exported for tests.
+ */
+export function commentDoc(text: string, callout?: Callout): object {
+  const inline = (line: string) =>
+    line.split(/\*\*(.+?)\*\*/).flatMap((part, i) => (part ? [i % 2 ? { type: 'text', text: part, marks: [{ type: 'strong' }] } : { type: 'text', text: part }] : []));
+  const paragraphs = (lines: string) => lines.split('\n').map((line) => ({ type: 'paragraph', content: inline(line) }));
+  const panel = callout && {
+    type: 'panel',
+    attrs: { panelType: callout.tone },
+    content: [{ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: `${BOT_MARK} ${callout.title}` }] }, ...paragraphs(callout.text)],
+  };
+  return { type: 'doc', version: 1, content: [...(panel ? [panel] : []), ...(text || !panel ? paragraphs(text) : [])] };
+}
+
 /** Posts a comment (one paragraph per line); returns Jira's timestamp so answers compare on its clock. */
-export function comment(key: string, text: string): Promise<{ created: string }> {
-  const paragraphs = text.split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] }));
-  return api(`api/3/issue/${key}/comment`, { method: 'POST', body: { body: { type: 'doc', version: 1, content: paragraphs } } });
+export function comment(key: string, text: string, callout?: Callout): Promise<{ created: string }> {
+  const post = (doc: object) => api<{ created: string }>(`api/3/issue/${key}/comment`, { method: 'POST', body: { body: doc } });
+  if (!callout) return post(commentDoc(text));
+  // A site that refuses the panel gets the same words, its title in bold.
+  return post(commentDoc(text, callout)).catch((err: Error) =>
+    /: 400 /.test(err.message) ? post(commentDoc(`${BOT_MARK} **${callout.title}**\n${callout.text}${text ? `\n\n${text}` : ''}`)) : Promise.reject(err),
+  );
 }
 
 /**
