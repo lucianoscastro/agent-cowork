@@ -9,6 +9,10 @@ const translations = {
     'Remove this project? Its agents stop working on it.': 'Remover este projeto? Os agentes param de trabalhar nele.',
     'Remove project': 'Remover projeto',
     'Import project': 'Importar projeto',
+    'Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run':
+      'Registrar cada run de agente no card como work log do Jira: quanto tempo levou, os runtimes, tokens e custo, e um link para a run',
+    "It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.":
+      'Conta nos relatórios de horas do Jira (e no Tempo) como o tempo das pessoas; a estimativa não muda e ninguém é notificado. Exige o time tracking ligado no Jira.',
     'How a card moves on the board, the same for every agent (a transition or status name; empty leaves it where it is):':
       'Como o card anda no board, igual para todos os agentes (nome da transição ou do status; vazio deixa onde está):',
     'When an agent takes it': 'Quando um agente pega',
@@ -217,6 +221,10 @@ const translations = {
     'Remove this project? Its agents stop working on it.': '¿Quitar este proyecto? Sus agentes dejan de trabajar en él.',
     'Remove project': 'Quitar proyecto',
     'Import project': 'Importar proyecto',
+    'Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run':
+      'Registrar cada ejecución de agente en su tarjeta como registro de trabajo de Jira: cuánto tardó, los runtimes, tokens y costo, y un enlace a la ejecución',
+    "It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.":
+      'Cuenta en los informes de horas de Jira (y en Tempo) como el tiempo de las personas; la estimación no cambia y no se notifica a nadie. Requiere el control de tiempo activado en Jira.',
     'How a card moves on the board, the same for every agent (a transition or status name; empty leaves it where it is):':
       'Cómo avanza la tarjeta en el tablero, igual para todos los agentes (nombre de la transición o del estado; vacío la deja donde está):',
     'When an agent takes it': 'Cuando un agente la toma',

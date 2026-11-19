@@ -186,6 +186,18 @@ export function comment(key: string, text: string): Promise<{ created: string }>
   return api(`api/3/issue/${key}/comment`, { method: 'POST', body: { body: { type: 'doc', version: 1, content: paragraphs } } });
 }
 
+/**
+ * Logs time on a card (its Work log, apart from the comments), leaving the estimate as it is and notifying nobody.
+ * Jira's smallest entry is a minute.
+ */
+export function addWorklog(key: string, started: string, seconds: number, text: string, link?: string): Promise<unknown> {
+  const content = [{ type: 'text', text }, ...(link ? [{ type: 'text', text: ' · ' }, { type: 'text', text: link, marks: [{ type: 'link', attrs: { href: link } }] }] : [])];
+  return api(`api/3/issue/${key}/worklog?adjustEstimate=leave&notifyUsers=false`, {
+    method: 'POST',
+    body: { started: started.replace('Z', '+0000'), timeSpentSeconds: Math.max(60, Math.round(seconds / 60) * 60), comment: { type: 'doc', version: 1, content: [{ type: 'paragraph', content }] } },
+  });
+}
+
 /** A block of an issue description: a heading, paragraphs, a code block or a bullet list. */
 export type DocBlock = { heading: string } | { text: string } | { code: string } | { bullets: string[] };
 
@@ -298,6 +310,10 @@ export async function checkBoard(boardId: string): Promise<Check[]> {
     ['Developer · PRs merged', dev.mergedTransition],
     ['Dependabot · CI card moves to', dependabot.cardTransition],
   ];
+  if (flow.worklog) {
+    const on = await api<{ timeTrackingEnabled?: boolean }>('api/3/configuration').then((c) => c.timeTrackingEnabled === true, () => false);
+    checks.push({ label: 'Agents · work log', ok: on, detail: on ? 'time tracking is on' : 'time tracking is off on this site (Jira settings → Issues → Time tracking): the runs cannot log their time' });
+  }
   for (const [label, name] of wantedStatuses.filter(([, n]) => n)) {
     // A transition name also works at run time, so a miss here is worth a look rather than certainly wrong.
     checks.push({ label, ok: has(statuses, name), detail: has(statuses, name) ? name : `"${name}" is not a status of ${projectKey} (statuses: ${statuses.join(', ')})` });

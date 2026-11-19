@@ -1,13 +1,17 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AgentId } from './config.ts';
+import { type AgentId, read } from './config.ts';
 import { Items, sql } from './db.ts';
 import { env } from './env.ts';
+import { addWorklog } from './integrations/jira.ts';
+import { AGENT_NAMES } from './notify.ts';
 import { log } from './sh.ts';
+import { runsUsage } from './usage.ts';
 
 export type RunStatus = 'running' | 'done' | 'failed' | 'parked' | 'waiting' | 'killed';
 export type RunEnd = { status: Exclude<RunStatus, 'running'>; summary?: string; data?: Record<string, unknown> };
-export type RunMeta = { agent: AgentId; item: string; url?: string; title?: string; dryRun: boolean; timeoutMs?: number };
+/** card: the Jira card the run works on; with jira.worklog on, a live run's time goes on it as a work log. */
+export type RunMeta = { agent: AgentId; item: string; url?: string; title?: string; dryRun: boolean; timeoutMs?: number; card?: string };
 
 const KILLED = 'killed by the admin';
 const active = new Map<number, { agent: AgentId; controller: AbortController }>();
@@ -57,9 +61,10 @@ export class Run {
 /** Runs fn as a tracked run; failures, kills and timeouts are recorded instead of thrown. */
 export async function withRun(meta: RunMeta, fn: (run: Run) => Promise<RunEnd>): Promise<RunEnd> {
   const controller = new AbortController();
+  const started = now();
   const { lastInsertRowid } = sql()
     .prepare('INSERT INTO runs (agent, item, url, title, status, dry_run, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(meta.agent, meta.item, meta.url ?? null, meta.title ?? null, 'running', meta.dryRun ? 1 : 0, now());
+    .run(meta.agent, meta.item, meta.url ?? null, meta.title ?? null, 'running', meta.dryRun ? 1 : 0, started);
   const id = Number(lastInsertRowid);
   active.set(id, { agent: meta.agent, controller });
   // The time limit is a timer the run can push back (Run.extend), not a fixed AbortSignal.timeout.
@@ -93,10 +98,33 @@ export async function withRun(meta: RunMeta, fn: (run: Run) => Promise<RunEnd>):
     clearTimeout(timer);
     active.delete(id);
   }
+  const ended = now();
   sql()
     .prepare('UPDATE runs SET status = ?, summary = ?, error = ?, ended_at = ? WHERE id = ?')
-    .run(end.status, end.summary ?? null, error, now(), id);
+    .run(end.status, end.summary ?? null, error, ended, id);
+  // ponytail: a run cut by a restart logs nothing; its time is lost to the card, not to the Runs page.
+  if (meta.card && !meta.dryRun && read('jira').worklog) {
+    const w = worklog(id, meta.agent, started, ended, end.status);
+    await addWorklog(meta.card, started, w.seconds, w.text, w.link).catch((err) => run.event('warn', 'The time was not logged on the card', (err as Error).message));
+  }
   return end;
+}
+
+/** A run's work log on its card: how long it took, the runtimes it called, its tokens and cost, and a link to it. Exported for tests. */
+export function worklog(id: number, agent: AgentId, started: string, ended: string, status: RunStatus): { seconds: number; text: string; link?: string } {
+  const models = sql()
+    .prepare("SELECT DISTINCT json_extract(data, '$.provider') AS provider, json_extract(data, '$.model') AS model FROM run_events WHERE run_id = ? AND kind = 'usage' ORDER BY id")
+    .all(id) as { provider: string | null; model: string | null }[];
+  const { tokens, cost } = runsUsage([id]).get(id) ?? { tokens: 0, cost: 0 };
+  const count = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : tokens >= 1e3 ? `${Math.round(tokens / 1e3)}k` : String(tokens);
+  const text = [
+    `agentCowork · ${AGENT_NAMES[agent] ?? agent} · run #${id} (${status})`,
+    models.map((m) => [m.provider, m.model !== 'default' && m.model].filter(Boolean).join(' ')).join(', '),
+    tokens > 0 && `${count} tokens`,
+    cost > 0 && `US$${cost.toFixed(2)}`,
+  ].filter(Boolean);
+  const { uiUrl } = read('notifications');
+  return { seconds: (Date.parse(ended) - Date.parse(started)) / 1000, text: text.join(' · '), link: uiUrl ? `${uiUrl.replace(/\/$/, '')}/#/runs/${id}` : undefined };
 }
 
 export function killRun(id: number): boolean {

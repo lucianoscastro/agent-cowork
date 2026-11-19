@@ -96,7 +96,7 @@ async function handle(items: Items, key: string, project: Project, dryRun: boole
   const posted = item && (item.status === 'waiting' || approvalSince) && typeof item.data.discovery === 'boolean' ? item.data.discovery : undefined;
   const kept = approvalSince ? { ...data, approval: true, waitingSince: approvalSince, discovery: posted } : data;
   const end = await withRun(
-    { agent: 'pm', item: key, url: data.url, title: project.name, dryRun, timeoutMs: cfg.limits.runMinutes * 60_000 },
+    { agent: 'pm', item: key, url: data.url, title: project.name, dryRun, timeoutMs: cfg.limits.runMinutes * 60_000, card: key },
     (run) => learning(run, project.name, cfg.lead, dryRun, (signals) => specify(run, key, project, dryRun, signals, approvalSince, posted)),
   );
   if (end.status === 'done') items.done(key, { summary: end.summary });

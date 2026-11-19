@@ -53,7 +53,7 @@ export async function sendTest(): Promise<{ ok: boolean; message: string }> {
   return { ok: results.every((r) => r.endsWith(': sent')), message: results.join(' · ') };
 }
 
-const AGENT_NAMES: Record<string, string> = { approver: 'Approver', dependabot: 'Dependabot', developer: 'Developer', auditor: 'Auditor', sentinel: 'Sentinel', documenter: 'Documenter' };
+export const AGENT_NAMES: Record<string, string> = { approver: 'Approver', dependabot: 'Dependabot', developer: 'Developer', pm: 'Product Manager', auditor: 'Auditor', sentinel: 'Sentinel', documenter: 'Documenter' };
 
 /** An item that now waits for a person: what it is, why, and where to look. */
 export function notifyInbox({ agent, key, data }: InboxEntry): void {

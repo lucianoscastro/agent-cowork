@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import { api, clearSecret, saveSection, setSecret, type Sections, type SettingsResponse } from '../api';
-import { Badge, Button, Card, Field, FoldCard, Loading, Message, PageHeader, Text, useAction, useFetch, useUnsaved } from '../ui';
+import { Badge, Button, Card, Field, FoldCard, Loading, Message, PageHeader, Text, Toggle, useAction, useFetch, useUnsaved } from '../ui';
 
 export function SecretInput({ name, label, hint, settings, reload }: { name: string; label: string; hint: string; settings: SettingsResponse; reload: () => void }) {
   const [value, setValue] = useState('');
@@ -111,6 +111,16 @@ export function Integrations() {
           <Field label="When handed to another agent" hint="Where the JQL finds it again: needed when the JQL names a status.">
             <Text value={jira.readyTransition} onChange={(readyTransition) => setJira({ ...jira, readyTransition })} placeholder="leave unchanged" />
           </Field>
+        </div>
+        <Toggle
+          checked={jira.worklog}
+          onChange={(worklog) => setJira({ ...jira, worklog })}
+          label="Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run"
+        />
+        <p className="hint">
+          {t("It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.")}
+        </p>
+        <div className="row">
           <Button variant="primary" busy={j.busy} onClick={() => j.run(async () => (await saveSection('jira', jira), reload()))}>
             Save
           </Button>

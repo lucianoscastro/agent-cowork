@@ -185,7 +185,7 @@ async function followUp(
   const notes = work.flatMap((w) => w.pending.threads.map((t) => t.comments.nodes.at(-1)!.databaseId));
   const newest = work.flatMap((w) => w.pending.comments.map((c) => c.createdAt)).reduce((a, b) => (a > b ? a : b), String(item.data.handledUntil ?? ''));
   const end = await withRun(
-    { agent: 'developer', item: item.key, url: work[0].pr.url, title: `${project.name} · PR follow-up`, dryRun, timeoutMs: cfg.limits.runMinutes * 60_000 },
+    { agent: 'developer', item: item.key, url: work[0].pr.url, title: `${project.name} · PR follow-up`, dryRun, timeoutMs: cfg.limits.runMinutes * 60_000, card: item.key },
     (run) =>
       rounds > cfg.limits.followUp
         ? park(run, work, rounds - 1)

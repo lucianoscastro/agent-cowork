@@ -174,7 +174,7 @@ export async function pollDeveloper(): Promise<void> {
 async function handle(items: Items, key: string, project: Project, dryRun: boolean): Promise<void> {
   const cfg = read('agents.developer');
   const end = await withRun(
-    { agent: 'developer', item: key, url: jira.browseUrl(key), title: project.name, dryRun, timeoutMs: cfg.limits.runMinutes * 60_000 },
+    { agent: 'developer', item: key, url: jira.browseUrl(key), title: project.name, dryRun, timeoutMs: cfg.limits.runMinutes * 60_000, card: key },
     (run) => learning(run, project.name, cfg.lead, dryRun, (signals) => work(run, key, project, dryRun, signals)),
   );
   const prs = (end.data?.prs ?? []) as WatchedPr[];

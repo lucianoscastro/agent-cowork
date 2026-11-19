@@ -25,7 +25,7 @@ import { liveOutput, parseTranscriptLine } from '../src/live.ts';
 import { runsUsage, usageSummary } from '../src/usage.ts';
 import { describeChanges, flattenSecrets, sanitizeHar, testSource } from '../src/agents/sentinel.ts';
 import { detectSuite, envRefs, isolate, parseCucumberJson, parseJunit, parsePlaywrightJson, testLabel } from '../src/agents/suite.ts';
-import { getRun, type Run, withRun } from '../src/runs.ts';
+import { getRun, type Run, withRun, worklog } from '../src/runs.ts';
 import { runVerify } from '../src/agents/verify.ts';
 import { forEachLimit, maskSecrets, renderPrompt, run as sh, safeEnv, untrusted, withLock } from '../src/sh.ts';
 
@@ -496,6 +496,28 @@ test('usage: model calls are summed per run, agent, model and day', async () => 
   assert.ok(summary.byModel.some((m) => m.provider === 'claude' && m.model === 'opus' && m.cache >= 600));
   assert.ok(summary.byAgent.some((a) => a.agent === 'approver' && a.calls >= 2));
   assert.equal(summary.byDay[0].day, new Date().toISOString().slice(0, 10));
+});
+
+test('worklog: a run on a card logs its time, runtimes, tokens, cost and a link to it', async () => {
+  let id = 0;
+  // A dry run never writes to Jira: only what its entry would say is checked here.
+  await withRun({ agent: 'pm', item: 'WL-1', dryRun: true, card: 'WL-1' }, async (run) => {
+    id = run.id;
+    run.event('usage', 'specify: usage', { inputTokens: 1_000_000, outputTokens: 234_000, costUsd: 0.84, provider: 'codex', model: 'gpt-x' });
+    run.event('usage', 'learn: usage', { inputTokens: 100, provider: 'claude', model: 'default' });
+    return { status: 'waiting' };
+  });
+  const rawNotifications = getSetting<Record<string, unknown>>('notifications', {});
+  putSetting('notifications', { ...read('notifications'), uiUrl: 'https://cowork.example/' });
+  const w = worklog(id, 'pm', '2026-11-19T17:00:00.000Z', '2026-11-19T17:23:30.000Z', 'waiting');
+  putSetting('notifications', rawNotifications);
+  assert.equal(w.seconds, 1410);
+  assert.equal(w.text, `agentCowork · Product Manager · run #${id} (waiting) · codex gpt-x, claude · 1.2M tokens · US$0.84`);
+  assert.equal(w.link, `https://cowork.example/#/runs/${id}`);
+  // No model call and no UI address: the time alone, without a link.
+  let quiet = 0;
+  await withRun({ agent: 'developer', item: 'WL-2', dryRun: true, card: 'WL-2' }, async (run) => ((quiet = run.id), { status: 'done' }));
+  assert.deepEqual(worklog(quiet, 'developer', '2026-11-19T17:00:00.000Z', '2026-11-19T17:00:20.000Z', 'done'), { seconds: 20, text: `agentCowork · Developer · run #${quiet} (done)`, link: undefined });
 });
 
 test('suite detection: Playwright, Cucumber and Cypress from the repository files, nothing assumed', () => {
@@ -1137,14 +1159,14 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.equal(read('agents.developer').label, 'build-me');
   // The card's flow is shared too: the Developer's start and blocked moves (an empty one stays empty), and a hand-off
   // back to the status the JQL names.
-  const flow = { readyJql: 'statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '', readyTransition: 'Ready for AI' };
+  const flow = { readyJql: 'statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '', readyTransition: 'Ready for AI', worklog: false };
   assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
   assert.deepEqual(getSetting<Record<string, unknown>>('jira', {}), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
   assert.equal(cardJql('agent-spec'), 'labels = "agent-spec" AND (statusCategory != Done AND status = "Ready for AI")');
   assert.throws(() => write('jira', { ...read('jira'), readyJql: ' ' }), /readyJql is required/);
   // Saved with the shared JQL but before the flow: the flow is added, the JQL kept.
   putSetting('jira', { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done' });
-  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', readyTransition: '' });
+  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', readyTransition: '', worklog: false });
   assert.equal(write('jira', { ...read('jira'), readyTransition: 'Ready for AI' }).readyTransition, 'Ready for AI');
   putSetting('jira', rawJira);
   putSetting('agents.developer', rawDev);
