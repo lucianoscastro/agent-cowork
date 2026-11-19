@@ -37,6 +37,7 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
    - **promote**: the card only moves existing commits between branches of these repositories (a sync such as `develop` → `qa`, or a back-merge of a hotfix), with no code to write. List each pull request in `promotions` (`repo` as `owner/name` from the list above, `from` the source branch, `to` the target branch). The platform opens them as they are and never merges; `plan` becomes their description, in {{language}}: what they promote and what a person must check before merging (database scripts, runtime or configuration changes, merge order).
    - **answer**: the card asks a question or an investigation, and the deliverable is the answer. Write the answer in `plan`, in {{language}}; it goes on the card.
    - **handoff**: what the card needs can only be done by a person with access agents do not have (cloud or infrastructure settings, secrets, third-party consoles, merging or deploying). Write in `plan`, in {{language}}, the exact checklist for that person.
+   - **needs_tools**: only when the project lists databases above and this session has no database tools (no `db_list`, `db_schema` or `db_query`), and the card cannot be done right without them: checking or changing data, a schema the code does not show, or validating a database script you would write. Working from the code there would be guessing. Write in `plan`, in {{language}}, what you need to check in the database and why. The card waits for a runtime that has the tools and comes back then. Never declare it when you have the tools, or when the code alone settles the work.
    Never declare promote, answer or handoff to avoid a code change the card asks for.
 1. Read each repository's agent instructions (`CLAUDE.md`, `AGENTS.md`) and README.
 2. Trace the real flow end to end for this issue. For a bug, find the root cause and every caller of the code you will change. When the answer depends on data or on the schema actually deployed and the project lists databases, check it with the database tools instead of assuming.
@@ -64,7 +65,7 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
 You are done when you return:
 
 - `status`: "ready", or "needs_input" when you must ask.
-- `kind`: "code", "promote", "answer" or "handoff" (see step 0).
+- `kind`: "code", "promote", "answer", "handoff" or "needs_tools" (see step 0).
 - `plan`: the plan in Markdown, in English for "code"; for the other kinds, the text described in step 0.
 - `promotions`: for "promote", the pull requests to open; otherwise empty.
 - `questions`: for "needs_input", the numbered questions in {{language}}; otherwise empty.

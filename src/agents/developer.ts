@@ -2,13 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type ModelChoice, outputLanguage, type Project, read, repoFolder, type Reviewer, verifyCommands } from '../config.ts';
+import { type ModelChoice, outputLanguage, type Project, type ProviderId, read, repoFolder, type Reviewer, verifyCommands } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { env } from '../env.ts';
 import { actionsLinks, failedLogTail, gh, ghJson } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
 import { playwrightConfig } from '../providers/browser.ts';
-import { runProvider, type Subagent } from '../providers/index.ts';
+import { runProvider, type Subagent, TOOL_RUNTIMES, toolsStatus } from '../providers/index.ts';
 import { withRun, type Run, type RunEnd } from '../runs.ts';
 import { type Checkout, checkout, forEachLimit, log, removeCheckout, renderPrompt, run as sh, untrusted } from '../sh.ts';
 import { fixBranch } from './dependabot.ts';
@@ -38,7 +38,7 @@ export type Review = { verdict: 'approve' | 'changes'; findings: Finding[]; summ
  * opened by the platform), answer (a reply on the card) or handoff (a checklist for a person with access the
  * agents don't have). The platform runs each one; the agent never gets the GitHub token.
  */
-type Kind = 'code' | 'promote' | 'answer' | 'handoff';
+type Kind = 'code' | 'promote' | 'answer' | 'handoff' | 'needs_tools';
 export type Promotion = { repo: string; from: string; to: string };
 type Plan = { status: 'ready' | 'needs_input'; kind: Kind; plan: string; questions: string; promotions: Promotion[] };
 export type Built = { status: 'done' | 'needs_input'; title: string; summary: string };
@@ -48,7 +48,7 @@ const PLAN_SCHEMA = {
   type: 'object',
   properties: {
     status: { type: 'string', enum: ['ready', 'needs_input'] },
-    kind: { type: 'string', enum: ['code', 'promote', 'answer', 'handoff'] },
+    kind: { type: 'string', enum: ['code', 'promote', 'answer', 'handoff', 'needs_tools'] },
     plan: { type: 'string' },
     questions: { type: 'string' },
     promotions: {
@@ -154,7 +154,9 @@ export async function pollDeveloper(): Promise<void> {
     const project = projects.find((p) => p.name === c.data.project);
     try {
       const issue = await jira.getIssue(c.key);
-      const resume = c.status === 'waiting' ? c.data.resume || jira.hasAnswer(issue.fields.comment.comments, String(c.data.waitingSince)) : c.status === 'failed' && c.attempts < MAX_ATTEMPTS;
+      // A card waiting for the database tools resumes once a runtime with them is back, not on a comment.
+      const answered = () => (c.data.needsTools ? toolsStatus(cfg.lead.provider).ready : jira.hasAnswer(issue.fields.comment.comments, String(c.data.waitingSince)));
+      const resume = c.status === 'waiting' ? c.data.resume || answered() : c.status === 'failed' && c.attempts < MAX_ATTEMPTS;
       if (issue.fields.status.statusCategory.key === 'done') items.done(c.key, { closed: true });
       else if (project && resume) queue.set(c.key, project);
     } catch (err) {
@@ -184,7 +186,7 @@ async function handle(items: Items, key: string, project: Project, dryRun: boole
   } else if (end.status === 'done') items.done(key, { summary: end.summary, handedBack: end.data?.handedBack });
   else if (end.status === 'waiting' || end.status === 'parked') {
     // url and title: the Inbox links the card, where the answer goes.
-    items.wait(key, { project: project.name, url: jira.browseUrl(key), title: key, reason: end.summary, waitingSince: end.data?.waitingSince ?? new Date().toISOString() });
+    items.wait(key, { project: project.name, url: jira.browseUrl(key), title: key, reason: end.summary, waitingSince: end.data?.waitingSince ?? new Date().toISOString(), needsTools: end.data?.needsTools === true });
   } else if (end.status === 'killed') {
     items.stopped(key, { project: project.name, url: jira.browseUrl(key), title: key });
   } else {
@@ -293,12 +295,28 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     const lead = (label: string, prompt: string, schema: object, mode: 'read-only' | 'write', subagents?: Record<string, Subagent>, browserIfClaude?: string) =>
       runProvider(cfg.lead.provider, { run, label, prompt, schema, cwd: workspace, mode, model: cfg.lead.model, subagents, browserIfClaude, tools: mode === 'write' ? databases?.write : databases?.read });
     const reviewers = reviewPanel(run, cfg, workspace, databases?.read);
+    /**
+     * The plan, on a runtime without the database tools, says the card needs them: it waits, Blocked, and resumes on its
+     * own once Claude Code or Codex is back. A runtime that had them asking for them is a person's call, not a wait.
+     */
+    const waitForTools = async (why: string, provider?: ProviderId): Promise<RunEnd> => {
+      if (!databases || (provider && TOOL_RUNTIMES.includes(provider))) return await block('parked', why);
+      const { reason } = toolsStatus(cfg.lead.provider);
+      const text = `Only Claude Code and Codex reach the project's databases, and neither is available now (${reason}). **Nothing to do**: the card resumes on its own when one is back.`;
+      run.event('artifact', 'Waiting for the database tools', `${text}\n\n${why}`);
+      if (dryRun) return { status: 'waiting', summary: `would wait for the database tools: ${why}`, data: { waitingSince: new Date().toISOString(), needsTools: true } };
+      const { created } = await jira.comment(key, why, { tone: 'info', title: 'Waiting for a runtime with database access', text });
+      await jira.moveCard(key, 'blocked');
+      return { status: 'waiting', summary: `Waiting for a runtime with database access (${reason})`, data: { waitingSince: created, needsTools: true } };
+    };
 
     // --- Plan, with a bounded plan review by the independent reviewer ---
     run.stage('Plan');
-    let plan = (await lead('plan-1', await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only')).output as Plan;
+    let planned = await lead('plan-1', await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only');
+    let plan = planned.output as Plan;
     for (let round = 1; ; round++) {
       if (plan.status === 'needs_input') return await ask(plan.questions);
+      if (plan.kind === 'needs_tools') return await waitForTools(plan.plan, planned.provider);
       // The reviewer judges the kind too: a promotion or a handoff must not stand in for a code change.
       vars.plan = plan.kind === 'code' ? plan.plan : `Kind: ${plan.kind}${plan.promotions.map((p) => `\n- promote ${p.repo}: ${p.from} → ${p.to}`).join('')}\n\n${plan.plan}`;
       if (round > cfg.limits.planReview || !reviewers.size) break;
@@ -315,7 +333,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       }
       signals.push(`The plan reviewer asked for changes (the plan was revised):\n${formatFindings(review.findings)}`);
       vars.reviewContext = `The independent reviewer asked for changes to your previous plan. Revise it.\n\n<previous_plan>\n${plan.plan}\n</previous_plan>\n\n<review_findings>\n${formatFindings(review.findings)}\n</review_findings>`;
-      plan = (await lead(`plan-${round + 1}`, await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only')).output as Plan;
+      planned = await lead(`plan-${round + 1}`, await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only');
+      plan = planned.output as Plan;
     }
 
     if (plan.kind === 'answer') {

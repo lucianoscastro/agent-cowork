@@ -10,15 +10,15 @@ import { approvalOf, lintSpec, offline, planSubtasks, save as saveSpec } from '.
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
-import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyFromTrigger, readyStatus, triggerLabel, validateProjects, verifyCommands, write } from '../src/config.ts';
+import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyFromTrigger, readyStatus, SECRETS, triggerLabel, validateProjects, verifyCommands, write } from '../src/config.ts';
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
-import { getSecret, getSetting, inboxItems, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
+import { deleteSecret, getSecret, getSetting, inboxItems, Items, itemsByStatus, needsPerson, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
 import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
-import { fallbackOrder, guardReadOnly, limitPause } from '../src/providers/index.ts';
+import { fallbackOrder, guardReadOnly, limitPause, toolsStatus } from '../src/providers/index.ts';
 import { jwtClaims } from '../src/providers/account.ts';
 import { lastWords, parseLoginOutput, submitLoginCode, withProfileScope } from '../src/providers/login.ts';
 import { liveOutput, parseTranscriptLine } from '../src/live.ts';
@@ -1005,6 +1005,27 @@ test('fallbackOrder: chosen provider first, then Claude, Codex, agy, avoided las
   assert.deepEqual(fallbackOrder('agy', [], true), ['agy', 'claude', 'codex']);
   assert.deepEqual(fallbackOrder('agy', ['claude', 'agy'], true), ['agy', 'codex', 'claude']);
   assert.deepEqual(fallbackOrder('codex', [], false), ['codex']);
+});
+
+test('database tools: only Claude Code and Codex reach them; a card waiting for them needs nobody', async () => {
+  const { recordLimits } = await import('../src/providers/limits.ts');
+  const token = getSecret(SECRETS.claudeOauthToken);
+  setSecret(SECRETS.claudeOauthToken, 'test-token');
+  try {
+    // An agent on agy has the tools while Claude Code is ready; agy itself never counts.
+    assert.equal(toolsStatus('agy').ready, true);
+    recordLimits('claude', { limitedUntil: new Date(Date.now() + 3_600_000).toISOString() });
+    const waiting = toolsStatus('agy');
+    assert.equal(waiting.ready, false);
+    assert.match(waiting.reason, /^claude: usage limit reached, paused until \d\d:\d\d UTC; codex: /);
+  } finally {
+    recordLimits('claude', { limitedUntil: null });
+    if (token) setSecret(SECRETS.claudeOauthToken, token);
+    else deleteSecret(SECRETS.claudeOauthToken);
+  }
+  // It resumes on its own: not in the Inbox, nobody notified.
+  assert.equal(needsPerson('waiting', 0, { needsTools: true }), false);
+  assert.equal(needsPerson('waiting', 0, {}), true);
 });
 
 test('validPromotion: only two different branch names of a repository of the project', () => {

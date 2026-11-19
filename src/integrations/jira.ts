@@ -188,8 +188,8 @@ async function transitionBy(key: string, what: string, pick: (t: Transition) => 
   await api(`api/3/issue/${key}/transitions`, { method: 'POST', body: { transition: { id: match.id } } });
 }
 
-/** What a person must do, above a comment's text: a colored panel with a larger title (green to approve, yellow to answer). */
-export type Callout = { tone: 'success' | 'warning'; title: string; text: string };
+/** Above a comment's text, a colored panel with a larger title: green to approve, yellow to answer, blue when nobody has to act. */
+export type Callout = { tone: 'success' | 'warning' | 'info'; title: string; text: string };
 
 /**
  * A comment's document: one paragraph per line, **text** in bold (an unpaired ** stays as typed). A callout's title

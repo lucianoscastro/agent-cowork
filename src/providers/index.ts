@@ -40,7 +40,8 @@ export type ProviderRequest = {
  * cache reads and writes are apart. Only Claude reports a cost, its estimate at API prices.
  */
 export type Usage = { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; costUsd?: number };
-export type ProviderResult<T> = { output: T; usage: Usage };
+/** provider: the runtime that answered, after any fallback. */
+export type ProviderResult<T> = { output: T; usage: Usage; provider?: ProviderId };
 
 export const homes = {
   codex: join(env.paths.auth, 'codex'),
@@ -139,6 +140,17 @@ export function fallbackOrder(id: ProviderId, avoid: ProviderId[] = [], on = rea
   return [id, ...rest.filter((p) => !avoid.includes(p)), ...rest.filter((p) => avoid.includes(p))];
 }
 
+/** The runtimes that reach the platform's tools (the project's databases); agy reads MCP servers only from a global file. */
+export const TOOL_RUNTIMES: readonly ProviderId[] = ['claude', 'codex'];
+
+/** Whether an agent using `id` has a runtime with the platform's tools ready now, and why not. */
+export function toolsStatus(id: ProviderId): { ready: boolean; reason: string } {
+  const statuses = fallbackOrder(id)
+    .filter((p) => TOOL_RUNTIMES.includes(p))
+    .map(providerStatus);
+  return { ready: statuses.some((s) => s.ready), reason: statuses.map((s) => s.reason).filter(Boolean).join('; ') };
+}
+
 /** Like providerStatus, for an agent using `id`: ready when it or a provider it falls back to is ready. */
 export function routeStatus(id: ProviderId): ReturnType<typeof providerStatus> {
   return fallbackOrder(id).map(providerStatus).find((s) => s.ready) ?? providerStatus(id);
@@ -159,7 +171,7 @@ export async function runProvider<T>(id: ProviderId, req: ProviderRequest): Prom
     }
     if (failure) req.run.event('info', `${req.label}: ${failure.message.slice(0, 200)}; trying ${p}`);
     try {
-      return await callProvider<T>(p, { ...req, model: p === id ? req.model : '' });
+      return { ...(await callProvider<T>(p, { ...req, model: p === id ? req.model : '' })), provider: p };
     } catch (err) {
       if (!limitPause((err as Error).message)) throw err;
       failure = err as Error;

@@ -98,8 +98,9 @@ let inboxListener: ((entry: InboxEntry) => void) | undefined;
 export const onInbox = (fn: (entry: InboxEntry) => void) => void (inboxListener = fn);
 
 /** Whether an item shows in the Inbox: the same rule as the Inbox page. */
+// A card waiting for a runtime with the database tools needs nobody: it resumes on its own.
 export const needsPerson = (status: ItemStatus, attempts: number, data: Record<string, unknown>) =>
-  status === 'waiting' || status === 'human' || (status === 'failed' && attempts >= MAX_ATTEMPTS) || (status === 'watching' && Boolean(data.parked));
+  (status === 'waiting' && !data.needsTools) || status === 'human' || (status === 'failed' && attempts >= MAX_ATTEMPTS) || (status === 'watching' && Boolean(data.parked));
 
 /** Item state for one agent; dry runs use their own namespace so a shadow run never marks real work done. */
 export class Items {
