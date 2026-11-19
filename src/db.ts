@@ -205,6 +205,16 @@ export function itemsByStatus(statuses: ItemStatus[]): (Item & { agent: string; 
   });
 }
 
+/**
+ * What needs a person, for the Inbox: questions, parked runs, items handed over, PR follow-ups that gave up, and items
+ * out of retries. One its agent is working on again (an answer arrived, a Retry) is left out while that run lasts.
+ */
+export function inboxItems(): ReturnType<typeof itemsByStatus> {
+  const runs = sql().prepare("SELECT agent, item, dry_run FROM runs WHERE status = 'running'").all() as { agent: string; item: string; dry_run: number }[];
+  const working = new Set(runs.map((r) => `${r.dry_run ? 'dry:' : ''}${r.agent}:${r.item}`));
+  return itemsByStatus(['waiting', 'human', 'watching', 'failed']).filter((i) => needsPerson(i.status, i.attempts, i.data) && !working.has(`${i.dryRun ? 'dry:' : ''}${i.agent}:${i.key}`));
+}
+
 // --- audit log ---
 
 export function audit(actor: string, action: string, detail = ''): void {

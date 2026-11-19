@@ -13,7 +13,7 @@ import { asset } from '../src/assets.ts';
 import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyFromTrigger, readyStatus, triggerLabel, validateProjects, verifyCommands, write } from '../src/config.ts';
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
-import { getSecret, getSetting, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
+import { getSecret, getSetting, inboxItems, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
 import { adfToText, cardJql, currentDocs, hasAnswer, markdownName, missing, toAdf } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
@@ -95,7 +95,7 @@ test('verify commands: a repository runs its own list, or its stack defaults', (
   assert.deepEqual(projectRepos().map((r) => r.repo), ['acme/web', 'acme/api']); // Dependabot watches each repository once
 });
 
-test('items: done is skipped, a failure is not retried on its own, dry runs are separate', () => {
+test('items: done is skipped, a failure is not retried on its own, dry runs are separate', async () => {
   const live = new Items('approver', false);
   const dry = new Items('approver', true);
   live.done('pr-1');
@@ -110,6 +110,21 @@ test('items: done is skipped, a failure is not retried on its own, dry runs are 
   assert.equal(live.skip('pr-3'), false);
   new Items('developer', false).wait('ABC-1', { waitingSince: '2026-01-01T00:00:00Z' });
   assert.ok(itemsByStatus(['waiting']).some((i) => i.agent === 'developer' && i.key === 'ABC-1'));
+  // Answered, its agent works on it again: out of the Inbox while that run lasts, back if the run leaves it waiting.
+  const inInbox = () => inboxItems().some((i) => i.agent === 'pm' && i.key === 'INBOX-1' && i.dryRun);
+  new Items('pm', true).wait('INBOX-1', { waitingSince: '2026-01-01T00:00:00Z' });
+  assert.equal(inInbox(), true);
+  // Only that agent's run on that item, in the same mode, counts (withRun catches a throw: the answer comes out).
+  const during = async (agent: 'pm' | 'developer', dryRun: boolean) => {
+    let seen: boolean | undefined;
+    await withRun({ agent, item: 'INBOX-1', dryRun }, async () => ((seen = inInbox()), { status: 'done' }));
+    return seen;
+  };
+  assert.equal(await during('developer', true), true);
+  assert.equal(await during('pm', false), true);
+  assert.equal(await during('pm', true), false);
+  assert.equal(inInbox(), true);
+  new Items('pm', true).forget('INBOX-1');
 });
 
 test('approver approves only a clean approve verdict', () => {

@@ -9,7 +9,7 @@ import { type AgentId, dbSecretName, DEFAULTS, envSecretName, PROVIDERS, type Pr
 import { brainDir, brainSlug, deleteNote, listNotes, looksSecret, putNote, validNotePath } from './brain.ts';
 import { safeEqual, signSession, verifySession } from './crypto.ts';
 import { databaseUrl, probeDatabase } from './databases.ts';
-import { audit, auditLog, deleteSecret, getSecret, Items, itemsByStatus, needsPerson, secretNames, setSecret } from './db.ts';
+import { audit, auditLog, deleteSecret, getSecret, inboxItems, Items, itemsByStatus, secretNames, setSecret } from './db.ts';
 import { env } from './env.ts';
 import { applyGithubEnv, testGithub } from './integrations/github.ts';
 import { checkBoard, jiraStatus, testJira } from './integrations/jira.ts';
@@ -147,8 +147,6 @@ function assetsInfo() {
   };
 }
 
-/** What needs a person: questions, parked runs, items handed over, PR follow-ups that gave up, and items out of retries. */
-const inboxItems = () => itemsByStatus(['waiting', 'human', 'watching', 'failed']).filter((i) => needsPerson(i.status, i.attempts, i.data));
 
 // --- routes ---
 
