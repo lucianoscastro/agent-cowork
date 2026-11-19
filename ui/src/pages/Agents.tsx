@@ -101,6 +101,9 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
             <Field label="Discovery label" hint="A card with this label, usually an epic, gets a discovery instead: discovery.md and clickable prototypes of the main screens, for a person to approve on the card. Nothing is built from it; its stories and tasks, with the trigger label, are specified from it.">
               <Text value={pm.discoveryLabel} onChange={(discoveryLabel) => setPm({ ...pm, discoveryLabel })} placeholder="agent-discovery" />
             </Field>
+            <Field label="Trigger status" hint="Only cards in this Jira status are taken, such as Ready for AI; empty takes any status not done. A card the Developer sends back is moved here.">
+              <Text value={pm.triggerStatus} onChange={(triggerStatus) => setPm({ ...pm, triggerStatus })} placeholder="any status not done" />
+            </Field>
             <Field label="Cards in parallel" hint="Across all projects, the same project included. Each card has its own checkout and branch.">
               <Num value={pm.concurrency} min={1} max={4} onChange={(concurrency) => setPm({ ...pm, concurrency })} />
             </Field>

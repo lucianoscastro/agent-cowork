@@ -262,6 +262,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       if (dryRun) return { status: 'waiting', summary: `would send the card back to the Product Manager:\n\n${text}`, data: { waitingSince: new Date().toISOString() } };
       await jira.comment(key, `${BOT_MARK} ${HAND_BACK}. What does not hold:\n\n${text}`);
       await jira.relabel(key, [own], [pm.label]);
+      // The Product Manager takes only cards in its status: the card goes back there, or waits for a person to move it.
+      if (pm.triggerStatus) await jira.transition(key, pm.triggerStatus).catch((err) => run.event('warn', `The card was not moved back to ${pm.triggerStatus}: a person moves it for the Product Manager to take it`, (err as Error).message));
       wake('pm');
       return { status: 'done', summary: `sent back to the Product Manager: ${text}`, data: { handedBack: true } };
     };

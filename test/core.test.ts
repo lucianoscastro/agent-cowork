@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
 import { checkpointRef, clearCheckpoints, fromSpec, parseChecks, parseTasks, resumeBuild, reviewPasses, saveCheckpoint, specBrief, taskBrief, taskFingerprints, unproven, validPromotion } from '../src/agents/developer.ts';
-import { approvalOf, lintSpec, offline, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
+import { approvalOf, lintSpec, offline, openJql, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
@@ -1112,6 +1112,12 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.equal(write('agents.pm', { ...pm, discoveryLabel: 'explore' }).discoveryLabel, 'explore');
   assert.throws(() => write('agents.pm', { ...pm, discoveryLabel: pm.label }), /discoveryLabel must differ/);
   assert.throws(() => write('agents.pm', { ...pm, discoveryLabel: 'Agent-Spec' }), /discoveryLabel must differ/);
+  // A status rule is off until set, and its name cannot break out of the JQL quotes.
+  assert.equal(pm.triggerStatus, '');
+  assert.equal(write('agents.pm', { ...pm, triggerStatus: 'Ready for AI' }).triggerStatus, 'Ready for AI');
+  assert.throws(() => write('agents.pm', { ...pm, triggerStatus: 'Ready" OR project = X OR status = "x' }), /triggerStatus must be a Jira status name/);
+  assert.equal(openJql('', []), 'statusCategory != Done');
+  assert.equal(openJql('Ready for AI', ['ABC-1', 'ABC-2']), 'status = "Ready for AI" AND statusCategory != Done AND key not in (ABC-1, ABC-2)');
   assert.throws(() => write('agents.pm', { ...pm, discoveryLabel: 'a b") OR labels = "x' }), /discoveryLabel must be one Jira label/);
 
   // Attachments are saved under their own name: never a path.

@@ -138,6 +138,8 @@ export type Settings = {
     enabled: boolean;
     label: string;
     discoveryLabel: string;
+    // Only cards in this Jira status are taken (e.g. "Ready for AI"); empty takes any status not done.
+    triggerStatus: string;
     lead: ModelChoice;
     // Independent reviewers of the documents, as in the Developer: none, one or both; with both, each must approve.
     reviewer: Reviewer;
@@ -240,6 +242,7 @@ export const DEFAULTS: Settings = {
     dryRun: true,
     label: 'agent-spec',
     discoveryLabel: 'agent-discovery',
+    triggerStatus: '',
     lead: { provider: 'claude', model: 'opus' },
     reviewer: { enabled: true, provider: 'codex', model: '' },
     secondReviewer: { enabled: false, provider: 'agy', model: '' },
@@ -588,10 +591,14 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
         const discoveryLabel = jiraLabel(o, key, 'discoveryLabel');
         // Jira matches labels whatever their case.
         if (discoveryLabel.toLowerCase() === label.toLowerCase()) throw new Error(`${key}.discoveryLabel must differ from ${key}.label`);
+        const triggerStatus = str(o, 'triggerStatus', key, { max: 60 });
+        // A status name goes inside quotes in the JQL the search builds.
+        if (/["\\\n]/.test(triggerStatus)) throw new Error(`${key}.triggerStatus must be a Jira status name, with no quotes or backslashes`);
         return {
           enabled: bool(o, 'enabled', key),
           label,
           discoveryLabel,
+          triggerStatus,
           lead: choice(o.lead, `${key}.lead`),
           reviewer: reviewer(o.reviewer, `${key}.reviewer`),
           secondReviewer: reviewer(o.secondReviewer, `${key}.secondReviewer`),

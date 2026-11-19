@@ -170,6 +170,7 @@ export type Sections = {
     enabled: boolean;
     label: string;
     discoveryLabel: string;
+    triggerStatus: string;
     lead: ModelChoice;
     reviewer: ModelChoice & { enabled: boolean };
     secondReviewer: ModelChoice & { enabled: boolean };
