@@ -97,3 +97,34 @@ test('every top-level page renders without console errors', async ({ page }) => 
     });
   }
 });
+
+test('a project exported and imported under another name comes back the same', async ({ page }) => {
+  const put = (items: unknown[]) => page.request.put('/api/settings/projects', { headers: { 'x-agentcowork': '1' }, data: { items } });
+  const project = {
+    name: 'Shop',
+    baseBranch: 'develop',
+    repos: { web: { repo: 'acme/web', stack: 'react', verify: ['npm test'] } },
+    databases: [{ name: 'main', access: 'read', description: 'Orders', engine: 'postgres', host: 'db.local', database: 'shop', user: 'reader' }],
+  };
+  expect((await put([project])).ok()).toBe(true);
+  try {
+    await page.goto('/#/projects');
+    await page.locator('summary', { hasText: 'Shop' }).click();
+    const download = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'Export' }).click();
+    await page.locator('input[type=file]').setInputFiles(await (await download).path());
+
+    // The name is taken: the copy waits, unsaved, for another one.
+    await expect(page.locator('.page-head').getByRole('alert')).toHaveText('A project named "Shop" already exists: rename the imported one before saving.');
+    const copy = page.locator('details.card').nth(1);
+    await copy.getByRole('textbox', { name: /^Name / }).first().fill('Shop copy');
+    await copy.locator('.project-actions').getByRole('button', { name: 'Save' }).click();
+    await expect(copy.locator('.project-actions').getByRole('status')).toHaveText('Saved');
+
+    const { sections } = await (await page.request.get('/api/settings')).json();
+    expect(sections.projects.items).toHaveLength(2);
+    expect(sections.projects.items[1]).toEqual({ ...sections.projects.items[0], name: 'Shop copy' });
+  } finally {
+    await put([]);
+  }
+});

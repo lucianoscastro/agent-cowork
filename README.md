@@ -71,7 +71,7 @@ Open <http://localhost:8081>, sign in with the admin user from the env file, the
 Home shows a setup checklist until these are done:
 
 1. **Setup → Accounts:** store the GitHub token of the user the agents act as; for the developer agent, also the Jira site, email and API token. Then pick API key or account login for each agent runtime and connect it.
-2. **Setup → Projects** (developer and Dependabot): the Jira board (developer), the repositories (each checked out in a folder named after it), and each repository's stack (Node.js, React or .NET). The stack picks the verify commands set under Setup → General; a repository can replace them with its own.
+2. **Setup → Projects** (developer and Dependabot): the Jira board (developer), the repositories (each checked out in a folder named after it), and each repository's stack (Node.js, React or .NET). The stack picks the verify commands set under Setup → General; a repository can replace them with its own. **Export** saves a project's settings as JSON (no secrets, no brain) and **Import project** brings one into another instance.
 3. **Team → each agent → Settings:** enable it, and pick runtimes, models, triggers and limits.
 4. Watch **Work → Runs** in dry run. When you trust an agent's results, turn its dry run off in its Settings, one agent at a time.
 

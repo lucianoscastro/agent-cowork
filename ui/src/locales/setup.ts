@@ -8,6 +8,12 @@ const translations = {
     // Projects
     'Remove this project? Its agents stop working on it.': 'Remover este projeto? Os agentes param de trabalhar nele.',
     'Remove project': 'Remover projeto',
+    'Import project': 'Importar projeto',
+    Export: 'Exportar',
+    'This is not a project file exported by agentCowork': 'Este não é um arquivo de projeto exportado pelo agentCowork',
+    'A project named "{name}" already exists: rename the imported one before saving.': 'Já existe um projeto chamado "{name}": renomeie o importado antes de salvar.',
+    'Imported as a new project: review it and save, then store its test variables and database passwords again.':
+      'Importado como projeto novo: revise e salve, depois cadastre de novo as variáveis de teste e as senhas dos bancos.',
     Save: 'Salvar',
     Checked: 'Verificado',
     'Check on Jira': 'Verificar no Jira',
@@ -203,6 +209,12 @@ const translations = {
     // Projects
     'Remove this project? Its agents stop working on it.': '¿Quitar este proyecto? Sus agentes dejan de trabajar en él.',
     'Remove project': 'Quitar proyecto',
+    'Import project': 'Importar proyecto',
+    Export: 'Exportar',
+    'This is not a project file exported by agentCowork': 'Este no es un archivo de proyecto exportado por agentCowork',
+    'A project named "{name}" already exists: rename the imported one before saving.': 'Ya existe un proyecto llamado "{name}": cambia el nombre del importado antes de guardarlo.',
+    'Imported as a new project: review it and save, then store its test variables and database passwords again.':
+      'Importado como proyecto nuevo: revísalo y guárdalo, después vuelve a guardar sus variables de prueba y las contraseñas de las bases de datos.',
     Save: 'Guardar',
     Checked: 'Comprobado',
     'Check on Jira': 'Comprobar en Jira',

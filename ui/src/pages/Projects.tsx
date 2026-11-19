@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, type Project, saveSection, type SettingsResponse, type Stack, STACK_NAMES, type TestEnvironment } from '../api';
 import { useT } from '../i18n';
 import { type DatabaseDraft, ProjectDatabases } from './Databases';
@@ -38,8 +38,8 @@ const fromDraft = (d: ProjectDraft): Project => ({
 });
 const EMPTY_REPO: RepoRow = { repo: '', stack: 'react', verify: [] };
 
-/** One project's Save and Remove, each with its own progress and message. */
-function ProjectActions({ onSave, onRemove }: { onSave: () => Promise<unknown>; onRemove: () => Promise<unknown> }) {
+/** One project's Save and Remove, each with its own progress and message; a saved one can be exported. */
+function ProjectActions({ saved, onSave, onRemove }: { saved?: string; onSave: () => Promise<unknown>; onRemove: () => Promise<unknown> }) {
   const t = useT();
   const save = useAction();
   const remove = useAction();
@@ -47,6 +47,11 @@ function ProjectActions({ onSave, onRemove }: { onSave: () => Promise<unknown>; 
     <div className="row project-actions">
       <Message message={save.message ?? remove.message} />
       <span className="spacer" />
+      {saved && (
+        <a className="btn secondary" href={`/api/projects/export?name=${encodeURIComponent(saved)}`} download>
+          {t('Export')}
+        </a>
+      )}
       <Button variant="danger" busy={remove.busy} onClick={() => window.confirm(t('Remove this project? Its agents stop working on it.')) && remove.run(onRemove, 'Removed')}>
         Remove project
       </Button>
@@ -97,6 +102,8 @@ export function Projects() {
   const t = useT();
   const { data, error, reload } = useFetch<SettingsResponse>('/settings');
   const [projects, setProjects] = useState<ProjectDraft[]>();
+  const importer = useAction();
+  const file = useRef<HTMLInputElement>(null);
   // Projects start collapsed; the open ones are tracked here so a re-render never closes them.
   const [open, setOpen] = useState<Set<number>>(new Set());
   const setOpenAt = (i: number, isOpen: boolean) =>
@@ -136,10 +143,42 @@ export function Projects() {
     setProjects((ps) => ps?.filter((_, j) => j !== i));
     setOpen(new Set());
   };
+  // An exported project comes in as a new unsaved one, checked by the server; a name already in use is refused on save.
+  const importFile = (f: File) =>
+    importer.run(async () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(await f.text());
+      } catch {
+        throw new Error('This is not a project file exported by agentCowork');
+      }
+      const project = await api<Project>('/projects/import', { method: 'POST', body });
+      setProjects([...projects, toDraft(project)]);
+      setOpenAt(projects.length, true);
+      const name = project.name.trim().toLowerCase();
+      if (projects.some((p) => p.name.trim().toLowerCase() === name)) {
+        throw new Error(t('A project named "{name}" already exists: rename the imported one before saving.', { name: project.name }));
+      }
+    }, 'Imported as a new project: review it and save, then store its test variables and database passwords again.');
 
   return (
     <>
       <PageHeader title="Projects">
+        <Message message={importer.message} />
+        <input
+          ref={file}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = ''; // the same file can be picked again
+            if (f) void importFile(f);
+          }}
+        />
+        <Button busy={importer.busy} onClick={() => file.current?.click()}>
+          Import project
+        </Button>
         <Button
           onClick={() => {
             setProjects([...projects, { name: 'New project', boardId: '', baseBranch: '', repos: [{ ...EMPTY_REPO }], databases: [] }]);
@@ -223,7 +262,7 @@ export function Projects() {
             stored={data.databases[p.name] ?? {}}
             onSecretChanged={reload}
           />
-          <ProjectActions onSave={() => saveAt(i)} onRemove={() => removeAt(i)} />
+          <ProjectActions saved={saved[i]?.name} onSave={() => saveAt(i)} onRemove={() => removeAt(i)} />
         </details>
       ))}
     </>

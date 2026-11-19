@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { extname, join, normalize, resolve } from 'node:path';
 import { AGENTS, agentStatus, forceAgent } from './agents/status.ts';
 import { asset, type AssetSource, DEFAULTS_DIR } from './assets.ts';
-import { type AgentId, dbSecretName, DEFAULTS, envSecretName, PROVIDERS, type Project, type ProviderId, read, SECRETS, type SectionKey, parseTestVars, write } from './config.ts';
+import { type AgentId, dbSecretName, DEFAULTS, envSecretName, PROVIDERS, type Project, type ProviderId, read, SECRETS, type SectionKey, parseTestVars, validateProjects, write } from './config.ts';
 import { brainDir, brainSlug, deleteNote, listNotes, looksSecret, putNote, validNotePath } from './brain.ts';
 import { safeEqual, signSession, verifySession } from './crypto.ts';
 import { databaseUrl, probeDatabase } from './databases.ts';
@@ -244,6 +244,25 @@ route('POST', '/api/projects/detect-suite', async ({ body }) => {
   const repo = projectRepo(project, b.repo);
   applyGithubEnv();
   return resolveSuite(project, repo, typeof b.branch === 'string' ? b.branch.slice(0, 200) : undefined);
+});
+
+/** A project file: the saved settings only; its secrets (test variables, database passwords) and brain stay here. */
+const PROJECT_FILE = 'agentcowork-project-v1';
+route('GET', '/api/projects/export', ({ url, res }) => {
+  const project = savedProject(url.searchParams.get('name'));
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="${brainSlug(project.name)}-project.json"` });
+  res.end(JSON.stringify({ format: PROJECT_FILE, project }, null, 2));
+  return undefined;
+});
+/** A project file checked as a save checks it; nothing is stored: the page adds it as an unsaved project. */
+route('POST', '/api/projects/import', async ({ body }) => {
+  const b = (await body()) as { format?: unknown; project?: unknown } | null;
+  if (b?.format !== PROJECT_FILE) throw new HttpError(400, 'This is not a project file exported by agentCowork');
+  try {
+    return validateProjects([b.project])[0];
+  } catch (err) {
+    throw new HttpError(400, (err as Error).message);
+  }
 });
 
 /** A repository's test variables: one JSON object, stored encrypted, never returned; its test commands get them. */
