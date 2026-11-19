@@ -84,7 +84,7 @@ export function Integrations() {
         }
       >
         <p className="muted">
-          {t('Used by the developer agent; each project sets its own board under Projects.')}{' '}
+          {t('Used by the Developer and the Product Manager; each project sets its own board under Projects.')}{' '}
           {t('Create the API token at {path}.', { path: 'id.atlassian.com → Security → API tokens' })} <b>{t('Pick classic, not "with scopes".')}</b>
         </p>
         <div className="row fields">
@@ -94,6 +94,8 @@ export function Integrations() {
           <Field label="Account email">
             <Text value={jira.email} onChange={(email) => setJira({ ...jira, email })} />
           </Field>
+        </div>
+        <div className="row fields">
           <Field label="Cards the agents take (JQL)" hint='Shared by every agent that takes cards from a board, each adding its own label (the Developer agent-ready, the Product Manager agent-spec and agent-discovery). For example: statusCategory != Done AND status = "Ready for AI".'>
             <Text value={jira.readyJql} onChange={(readyJql) => setJira({ ...jira, readyJql })} placeholder="statusCategory != Done" />
           </Field>
