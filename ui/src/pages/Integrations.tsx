@@ -94,6 +94,9 @@ export function Integrations() {
           <Field label="Account email">
             <Text value={jira.email} onChange={(email) => setJira({ ...jira, email })} />
           </Field>
+          <Field label="Cards the agents take (JQL)" hint='Shared by every agent that takes cards from a board, each adding its own label (the Developer agent-ready, the Product Manager agent-spec and agent-discovery). For example: statusCategory != Done AND status = "Ready for AI".'>
+            <Text value={jira.readyJql} onChange={(readyJql) => setJira({ ...jira, readyJql })} placeholder="statusCategory != Done" />
+          </Field>
           <Button variant="primary" busy={j.busy} onClick={() => j.run(async () => (await saveSection('jira', jira), reload()))}>
             Save
           </Button>

@@ -133,7 +133,8 @@ export const NOTIFY_EVENTS: { id: NotifyEvent; label: string }[] = [
 export type Sections = {
   general: { language: 'en-US' | 'pt-BR' | 'es-ES'; pollSeconds: number; fallback: boolean };
   github: { gitName: string; gitEmail: string };
-  jira: { url: string; email: string };
+  /** readyJql: the cards any agent may take from a board; each agent adds its own label. */
+  jira: { url: string; email: string; readyJql: string };
   notifications: { uiUrl: string; events: Record<NotifyEvent, boolean> };
   'providers.claude': { authMethod: 'api-key' | 'account'; defaultModel: string };
   'providers.codex': { authMethod: 'api-key' | 'account'; defaultModel: string };
@@ -170,7 +171,6 @@ export type Sections = {
     enabled: boolean;
     label: string;
     discoveryLabel: string;
-    triggerStatus: string;
     lead: ModelChoice;
     reviewer: ModelChoice & { enabled: boolean };
     secondReviewer: ModelChoice & { enabled: boolean };
@@ -181,7 +181,7 @@ export type Sections = {
   };
   'agents.developer': Shadow & {
     enabled: boolean;
-    triggerJql: string;
+    label: string;
     startTransition: string;
     blockedTransition: string;
     doneTransition: string;

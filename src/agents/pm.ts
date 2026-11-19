@@ -32,8 +32,8 @@ const SPEC_SCHEMA = {
   required: ['status', 'questions', 'title', 'summary', 'files'],
 };
 
-/** The label that starts the Developer, from its trigger. */
-const readyLabel = () => jira.triggerLabel(read('agents.developer').triggerJql) ?? 'agent-ready';
+/** The label that starts the Developer. */
+const readyLabel = () => read('agents.developer').label;
 
 /**
  * Agent G: a card with the trigger label gets its spec documents (spec, design, ADRs, tasks) as Markdown
@@ -53,14 +53,14 @@ export async function pollPm(): Promise<void> {
   // Cards waiting for an answer keep the label: left out of the search, they never crowd out new ones.
   // ponytail: up to 100 waiting cards in the JQL; past that, the oldest still take search slots.
   const keys = waiting.map((w) => w.key).filter((k) => /^[A-Z][A-Z0-9_]*-\d+$/.test(k)).slice(0, 100);
-  const open = openJql(cfg.triggerStatus, keys);
+  const notWaiting = keys.length ? ` AND key not in (${keys.join(', ')})` : '';
   // ponytail: two searches per project per poll; fine for a handful of projects.
   for (const project of projects) {
     if (!project.boardId) continue;
     // A discovery is usually an epic, whose stories and tasks build it, and a board's issues leave epics out: it is
     // searched in the board's project instead.
-    const discoveries = await jira.searchIssues(`project = "${await jira.boardProject(project.boardId)}" AND labels = "${cfg.discoveryLabel}" AND ${open}`);
-    for (const key of [...(await jira.searchBoard(project.boardId, `labels = "${cfg.label}" AND ${open}`)), ...discoveries.map((d) => d.key)]) {
+    const discoveries = await jira.searchIssues(`project = "${await jira.boardProject(project.boardId)}" AND ${jira.cardJql(cfg.discoveryLabel)}${notWaiting}`);
+    for (const key of [...(await jira.searchBoard(project.boardId, `${jira.cardJql(cfg.label)}${notWaiting}`)), ...discoveries.map((d) => d.key)]) {
       const item = items.get(key);
       // The label comes off at the hand-off: back on a card already specified, a person asks for a new version.
       const due = !item || (item.status === 'failed' && item.attempts < MAX_ATTEMPTS) || (item.status === 'done' && !dryRun);
@@ -83,10 +83,6 @@ export async function pollPm(): Promise<void> {
   }
   await forEachLimit([...queue], cfg.concurrency, ([key, project]) => handle(items, key, project, dryRun));
 }
-
-/** The part of the search every card shares: in the trigger status (any status not done, without one), not waiting. Exported for tests. */
-export const openJql = (status: string, waiting: string[]) =>
-  `${status ? `status = "${status}" AND ` : ''}statusCategory != Done${waiting.length ? ` AND key not in (${waiting.join(', ')})` : ''}`;
 
 async function handle(items: Items, key: string, project: Project, dryRun: boolean): Promise<void> {
   const cfg = read('agents.pm');

@@ -96,7 +96,8 @@ export type Settings = {
   // fallback: a call that hits a usage limit moves on to the next provider (see fallbackOrder).
   general: { language: Language; pollSeconds: number; fallback: boolean };
   github: { gitName: string; gitEmail: string };
-  jira: { url: string; email: string };
+  // readyJql: the cards any agent may take from a board (e.g. a status); each agent adds its own label.
+  jira: { url: string; email: string; readyJql: string };
   // What the webhook (a secret) is told about, and the UI's address for links in the messages (optional).
   notifications: { uiUrl: string; events: Record<NotifyEvent, boolean> };
   'providers.claude': { authMethod: AuthMethod; defaultModel: string };
@@ -138,8 +139,6 @@ export type Settings = {
     enabled: boolean;
     label: string;
     discoveryLabel: string;
-    // Only cards in this Jira status are taken (e.g. "Ready for AI"); empty takes any status not done.
-    triggerStatus: string;
     lead: ModelChoice;
     // Independent reviewers of the documents, as in the Developer: none, one or both; with both, each must approve.
     reviewer: Reviewer;
@@ -153,7 +152,8 @@ export type Settings = {
   };
   'agents.developer': Shadow & {
     enabled: boolean;
-    triggerJql: string;
+    // The label of the cards it takes, within the shared jira.readyJql.
+    label: string;
     startTransition: string;
     blockedTransition: string;
     doneTransition: string;
@@ -187,7 +187,7 @@ export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 export const DEFAULTS: Settings = {
   general: { language: 'en-US', pollSeconds: 300, fallback: true },
   github: { gitName: 'agentCowork', gitEmail: '' },
-  jira: { url: '', email: '' },
+  jira: { url: '', email: '', readyJql: 'statusCategory != Done' },
   notifications: { uiUrl: '', events: { inbox: true, pr: true, limit: true, merged: false } },
   'providers.claude': { authMethod: 'account', defaultModel: 'sonnet' },
   'providers.codex': { authMethod: 'account', defaultModel: '' },
@@ -242,7 +242,6 @@ export const DEFAULTS: Settings = {
     dryRun: true,
     label: 'agent-spec',
     discoveryLabel: 'agent-discovery',
-    triggerStatus: '',
     lead: { provider: 'claude', model: 'opus' },
     reviewer: { enabled: true, provider: 'codex', model: '' },
     secondReviewer: { enabled: false, provider: 'agy', model: '' },
@@ -254,7 +253,7 @@ export const DEFAULTS: Settings = {
   'agents.developer': {
     enabled: false,
     dryRun: true,
-    triggerJql: 'labels = "agent-ready" AND statusCategory != Done',
+    label: 'agent-ready',
     startTransition: 'In Progress',
     blockedTransition: 'Blocked',
     doneTransition: '',
@@ -312,9 +311,12 @@ export function read<K extends SectionKey>(key: K): Settings[K] {
   if (key === 'agents.developer') {
     const dev = value as Settings['agents.developer'];
     const d = DEFAULTS['agents.developer'];
+    // Saved before the shared JQL: the label of its own trigger JQL.
+    const saved = getSetting<{ label?: string; triggerJql?: string }>(key, {});
     return {
       ...d,
       ...dev,
+      label: saved.label ?? triggerLabel(saved.triggerJql ?? '') ?? d.label,
       limits: { ...d.limits, ...dev.limits },
       reviewer: { ...d.reviewer, ...dev.reviewer },
       secondReviewer: { ...d.secondReviewer, ...dev.secondReviewer },
@@ -331,9 +333,29 @@ export function read<K extends SectionKey>(key: K): Settings[K] {
       secondReviewer: { ...d.secondReviewer, ...pm.secondReviewer },
     } as Settings[K];
   }
+  // Saved before the shared JQL: the Developer's trigger JQL without its label, which applied to every card it took.
+  // Stored at once, so saving the Developer (which drops its old trigger JQL) cannot lose it.
+  const saved = key === 'jira' ? getSetting<Partial<Settings['jira']>>(key, {}) : {};
+  if (Object.keys(saved).length && saved.readyJql === undefined) {
+    const old = getSetting<{ triggerJql?: string }>('agents.developer', {}).triggerJql;
+    const jira = { ...DEFAULTS.jira, ...saved, readyJql: (old && readyFromTrigger(old)) || DEFAULTS.jira.readyJql };
+    putSetting('jira', jira);
+    return jira as Settings[K];
+  }
   // Fields added in later versions get their default in sections saved before them.
   return { ...DEFAULTS[key], ...value };
 }
+
+/** The label a trigger JQL selects cards by (`labels = "x"` or `labels in (x, …)`), if it has one. Exported for tests. */
+export const triggerLabel = (jql: string): string | undefined => /labels\s*(?:=|in\s*\()\s*"?([\w.-]+)/i.exec(jql)?.[1];
+
+/** A trigger JQL without its label clause: what it asked of every card beyond the label. Exported for tests. */
+export const readyFromTrigger = (jql: string): string | undefined =>
+  jql
+    .replace(/\blabels\s*(?:=\s*"?[\w.-]+"?|in\s*\([^)]*\))/i, '')
+    .replace(/\s+AND\s+AND\s+/i, ' AND ')
+    .replace(/^\s*AND\s+|\s+AND\s*$/gi, '')
+    .trim() || undefined;
 
 /** Validates a section sent by the UI and stores it; throws with a readable message when invalid. */
 export function write<K extends SectionKey>(key: K, value: unknown): Settings[K] {
@@ -544,7 +566,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
       case 'jira': {
         const url = str(o, 'url', key, { max: 300 }).replace(/\/$/, '');
         if (url && !/^https:\/\/[\w.-]+(:\d+)?$/.test(url)) throw new Error('jira.url must look like https://your-site.atlassian.net');
-        return { url, email: str(o, 'email', key, { max: 200 }) };
+        return { url, email: str(o, 'email', key, { max: 200 }), readyJql: str(o, 'readyJql', key, { required: true, max: 500 }) };
       }
       case 'notifications': {
         const uiUrl = str(o, 'uiUrl', key, { max: 300 }).replace(/\/$/, '');
@@ -591,14 +613,10 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
         const discoveryLabel = jiraLabel(o, key, 'discoveryLabel');
         // Jira matches labels whatever their case.
         if (discoveryLabel.toLowerCase() === label.toLowerCase()) throw new Error(`${key}.discoveryLabel must differ from ${key}.label`);
-        const triggerStatus = str(o, 'triggerStatus', key, { max: 60 });
-        // A status name goes inside quotes in the JQL the search builds.
-        if (/["\\\n]/.test(triggerStatus)) throw new Error(`${key}.triggerStatus must be a Jira status name, with no quotes or backslashes`);
         return {
           enabled: bool(o, 'enabled', key),
           label,
           discoveryLabel,
-          triggerStatus,
           lead: choice(o.lead, `${key}.lead`),
           reviewer: reviewer(o.reviewer, `${key}.reviewer`),
           secondReviewer: reviewer(o.secondReviewer, `${key}.secondReviewer`),
@@ -642,7 +660,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
         const limits = obj(o.limits, `${key}.limits`);
         return {
           enabled: bool(o, 'enabled', key),
-          triggerJql: str(o, 'triggerJql', key, { required: true }),
+          label: jiraLabel(o, key),
           startTransition: str(o, 'startTransition', key, { max: 100 }),
           blockedTransition: str(o, 'blockedTransition', key, { max: 100 }),
           doneTransition: str(o, 'doneTransition', key, { max: 100 }),

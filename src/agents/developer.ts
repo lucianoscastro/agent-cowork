@@ -135,7 +135,7 @@ export async function pollDeveloper(): Promise<void> {
   // ponytail: one board search per project per poll; fine for a handful of projects.
   for (const project of projects) {
     if (!project.boardId) continue;
-    for (const key of await jira.searchBoard(project.boardId, cfg.triggerJql)) {
+    for (const key of await jira.searchBoard(project.boardId, jira.cardJql(cfg.label))) {
       if (waitingKeys.has(key) || queue.has(key)) continue;
       if (!items.skip(key)) queue.set(key, project);
       // A card sent back to the Product Manager is due again once its new version comes back: no longer under the
@@ -254,16 +254,16 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
      */
     const ask = async (text: string): Promise<RunEnd> => {
       const pm = read('agents.pm');
-      const own = jira.triggerLabel(cfg.triggerJql);
       const handedBack = issue.fields.comment.comments.filter((c) => jira.adfToText(c.body).trimStart().startsWith(`${BOT_MARK} ${HAND_BACK}`)).length;
-      if (!docs.includes('spec.md') || !own || pm.dryRun || !agentStatus('pm').on || handedBack >= MAX_HAND_BACKS) return await block('waiting', text);
+      if (!docs.includes('spec.md') || pm.dryRun || !agentStatus('pm').on || handedBack >= MAX_HAND_BACKS) return await block('waiting', text);
       run.event('artifact', 'Sent back to the Product Manager', text);
       // A dry run changes no label, so the card would come straight back: it waits like a question instead.
       if (dryRun) return { status: 'waiting', summary: `would send the card back to the Product Manager:\n\n${text}`, data: { waitingSince: new Date().toISOString() } };
       await jira.comment(key, `${BOT_MARK} ${HAND_BACK}. What does not hold:\n\n${text}`);
-      await jira.relabel(key, [own], [pm.label]);
-      // The Product Manager takes only cards in its status: the card goes back there, or waits for a person to move it.
-      if (pm.triggerStatus) await jira.transition(key, pm.triggerStatus).catch((err) => run.event('warn', `The card was not moved back to ${pm.triggerStatus}: a person moves it for the Product Manager to take it`, (err as Error).message));
+      await jira.relabel(key, [cfg.label], [pm.label]);
+      // The shared JQL may take only cards in a status (Ready for AI): the card goes back to the one it was taken in.
+      // ponytail: a run resumed from Blocked sends it back to Blocked; then a person moves it for the Product Manager.
+      if (cfg.startTransition) await jira.transition(key, issue.fields.status.name).catch((err) => run.event('warn', `The card was not moved back to ${issue.fields.status.name}: a person moves it for the Product Manager to take it`, (err as Error).message));
       wake('pm');
       return { status: 'done', summary: `sent back to the Product Manager: ${text}`, data: { handedBack: true } };
     };

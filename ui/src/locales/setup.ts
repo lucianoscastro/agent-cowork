@@ -87,6 +87,9 @@ const translations = {
     'Pick classic, not "with scopes".': 'Escolha o clássico, não "com escopos".',
     'Site URL': 'URL do site',
     'Account email': 'E-mail da conta',
+    'Cards the agents take (JQL)': 'Cards que os agentes pegam (JQL)',
+    'Shared by every agent that takes cards from a board, each adding its own label (the Developer agent-ready, the Product Manager agent-spec and agent-discovery). For example: statusCategory != Done AND status = "Ready for AI".':
+      'Compartilhado por todos os agentes que pegam cards de um board, cada um somando a sua label (o Developer agent-ready, o Product Manager agent-spec e agent-discovery). Por exemplo: statusCategory != Done AND status = "Ready for AI".',
     'API token': 'Token de API',
     // Agent runtimes
     'Agent runtimes': 'Runtimes dos agentes',
@@ -279,6 +282,9 @@ const translations = {
     'Pick classic, not "with scopes".': 'Elige el clásico, no "con ámbitos".',
     'Site URL': 'URL del sitio',
     'Account email': 'Correo de la cuenta',
+    'Cards the agents take (JQL)': 'Tarjetas que toman los agentes (JQL)',
+    'Shared by every agent that takes cards from a board, each adding its own label (the Developer agent-ready, the Product Manager agent-spec and agent-discovery). For example: statusCategory != Done AND status = "Ready for AI".':
+      'Compartido por todos los agentes que toman tarjetas de un tablero, cada uno sumando su propia etiqueta (el Developer agent-ready, el Product Manager agent-spec y agent-discovery). Por ejemplo: statusCategory != Done AND status = "Ready for AI".',
     'API token': 'Token de API',
     // Agent runtimes
     'Agent runtimes': 'Runtimes de los agentes',

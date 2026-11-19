@@ -6,15 +6,15 @@ import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
 import { checkpointRef, clearCheckpoints, fromSpec, parseChecks, parseTasks, resumeBuild, reviewPasses, saveCheckpoint, specBrief, taskBrief, taskFingerprints, unproven, validPromotion } from '../src/agents/developer.ts';
-import { approvalOf, lintSpec, offline, openJql, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
+import { approvalOf, lintSpec, offline, planSubtasks, save as saveSpec } from '../src/agents/pm.ts';
 import { pendingWork, type PrSnapshot } from '../src/agents/pr-follow-up.ts';
 import { type Audit, CATEGORIES, findingKey, needsHuman, renderReport, severityCounts, verdictLabel } from '../src/agents/auditor.ts';
 import { asset } from '../src/assets.ts';
-import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, validateProjects, verifyCommands, write } from '../src/config.ts';
+import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyFromTrigger, triggerLabel, validateProjects, verifyCommands, write } from '../src/config.ts';
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
-import { getSecret, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, currentDocs, hasAnswer, markdownName, missing, toAdf, triggerLabel } from '../src/integrations/jira.ts';
+import { getSecret, getSetting, Items, itemsByStatus, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
+import { adfToText, cardJql, currentDocs, hasAnswer, markdownName, missing, toAdf } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -1112,12 +1112,23 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.equal(write('agents.pm', { ...pm, discoveryLabel: 'explore' }).discoveryLabel, 'explore');
   assert.throws(() => write('agents.pm', { ...pm, discoveryLabel: pm.label }), /discoveryLabel must differ/);
   assert.throws(() => write('agents.pm', { ...pm, discoveryLabel: 'Agent-Spec' }), /discoveryLabel must differ/);
-  // A status rule is off until set, and its name cannot break out of the JQL quotes.
-  assert.equal(pm.triggerStatus, '');
-  assert.equal(write('agents.pm', { ...pm, triggerStatus: 'Ready for AI' }).triggerStatus, 'Ready for AI');
-  assert.throws(() => write('agents.pm', { ...pm, triggerStatus: 'Ready" OR project = X OR status = "x' }), /triggerStatus must be a Jira status name/);
-  assert.equal(openJql('', []), 'statusCategory != Done');
-  assert.equal(openJql('Ready for AI', ['ABC-1', 'ABC-2']), 'status = "Ready for AI" AND statusCategory != Done AND key not in (ABC-1, ABC-2)');
+  // Every agent takes its own label within one shared JQL; a saved trigger JQL from before becomes both, and the shared
+  // part is stored at once, so saving the Developer later (dropping its old trigger JQL) cannot lose a status rule.
+  const rawJira = getSetting<Record<string, unknown>>('jira', {});
+  const rawDev = getSetting<Record<string, unknown>>('agents.developer', {});
+  const { label: _label, ...devBefore } = read('agents.developer');
+  putSetting('agents.developer', { ...devBefore, triggerJql: 'labels = "build-me" AND statusCategory != Done AND status = "Ready for AI"' });
+  putSetting('jira', { url: 'https://acme.atlassian.net', email: 'bot@acme.example' });
+  assert.equal(read('agents.developer').label, 'build-me');
+  assert.equal(read('jira').readyJql, 'statusCategory != Done AND status = "Ready for AI"');
+  assert.equal(getSetting<Record<string, unknown>>('jira', {}).readyJql, 'statusCategory != Done AND status = "Ready for AI"');
+  assert.equal(cardJql('agent-spec'), 'labels = "agent-spec" AND (statusCategory != Done AND status = "Ready for AI")');
+  assert.throws(() => write('jira', { ...read('jira'), readyJql: ' ' }), /readyJql is required/);
+  putSetting('jira', rawJira);
+  putSetting('agents.developer', rawDev);
+  assert.equal(readyFromTrigger('labels = "agent-ready" AND statusCategory != Done'), 'statusCategory != Done');
+  assert.equal(readyFromTrigger('statusCategory != Done AND labels in (a, b) AND status = "To Do"'), 'statusCategory != Done AND status = "To Do"');
+  assert.equal(readyFromTrigger('labels = agent-ready'), undefined);
   assert.throws(() => write('agents.pm', { ...pm, discoveryLabel: 'a b") OR labels = "x' }), /discoveryLabel must be one Jira label/);
 
   // Attachments are saved under their own name: never a path.

@@ -90,8 +90,8 @@ export async function relabel(key: string, remove: string[], add: string[]): Pro
   await api(`api/3/issue/${key}`, { method: 'PUT', body: { update: { labels: [...remove.map((l) => ({ remove: l })), ...add.map((l) => ({ add: l }))] } } });
 }
 
-/** The label a trigger JQL selects cards by (`labels = "x"` or `labels in (x, …)`), if it has one. Exported for tests. */
-export const triggerLabel = (jql: string): string | undefined => /labels\s*(?:=|in\s*\()\s*"?([\w.-]+)/i.exec(jql)?.[1];
+/** The cards an agent takes: its own label, within the JQL every agent shares (`jira.readyJql`, e.g. a status). */
+export const cardJql = (label: string) => `labels = "${label}" AND (${read('jira').readyJql})`;
 
 type Attachment = { filename: string; created: string; size: number; content: string };
 /** A name safe to save under a folder: a Markdown file name, no path. Exported for tests. */
@@ -264,7 +264,7 @@ export async function checkBoard(boardId: string): Promise<Check[]> {
 
   const dev = read('agents.developer');
   try {
-    const keys = await searchBoard(boardId, dev.triggerJql);
+    const keys = await searchBoard(boardId, cardJql(dev.label));
     checks.push({ label: 'Trigger JQL', ok: true, detail: keys.length ? `${keys.length >= 20 ? '20+' : keys.length} card(s) match now: ${keys.slice(0, 5).join(', ')}` : 'valid, no card matches now' });
   } catch (err) {
     checks.push({ label: 'Trigger JQL', ok: false, detail: (err as Error).message.replace(/^Jira GET [^:]+: /, '') });
