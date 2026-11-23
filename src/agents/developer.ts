@@ -369,7 +369,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     if (!dryRun) {
       const doc = `# Plan for ${key}: ${issue.fields.summary}\n\n> agentCowork Developer, run #${run.id}, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Replaced by each new plan; the pull requests show what was built.\n\n${plan.plan}\n`;
       await jira
-        .replaceAttachment(key, { name: jira.PLAN_DOC, type: 'text/markdown', data: Buffer.from(doc) })
+        .replaceAttachments(key, [{ name: jira.PLAN_DOC, type: 'text/markdown', data: Buffer.from(doc) }])
+        .then((left) => left.length > 0 && run.event('warn', 'An older plan stayed on the card', left.join(', ')))
         .catch((err) => run.event('warn', 'The plan was not attached to the card', (err as Error).message));
     }
 

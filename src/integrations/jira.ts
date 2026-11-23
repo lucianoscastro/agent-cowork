@@ -300,11 +300,23 @@ export async function attach(key: string, files: { name: string; type: string; d
   if (!res.ok) throw new Error(`Jira attach ${key}: ${res.status} ${(await res.text()).slice(0, 300)}`);
 }
 
-/** Attaches a file in place of its earlier copies: the new one first, then the older ones go, so the card always has one. */
-export async function replaceAttachment(key: string, file: { name: string; type: string; data: Buffer }): Promise<void> {
+/**
+ * Attaches files in place of their earlier versions, so people see one current copy: the new ones first, then every
+ * older attachment `old` names (by default, one with a name being attached) is removed. A failed attach throws; the
+ * names it could not remove are returned. Exported for tests.
+ */
+export async function replaceAttachments(
+  key: string,
+  files: { name: string; type: string; data: Buffer }[],
+  old: (name: string) => boolean = (name) => files.some((f) => f.name === name),
+): Promise<string[]> {
   const { fields } = await api<{ fields: { attachment?: Attachment[] } }>(`api/3/issue/${key}?fields=attachment`);
-  await attach(key, [file]);
-  for (const old of (fields.attachment ?? []).filter((a) => a.filename === file.name)) await api(`api/3/attachment/${old.id}`, { method: 'DELETE' });
+  await attach(key, files);
+  const left: string[] = [];
+  for (const a of (fields.attachment ?? []).filter((a) => old(a.filename))) {
+    await api(`api/3/attachment/${a.id}`, { method: 'DELETE' }).catch(() => left.push(a.filename));
+  }
+  return left;
 }
 
 /** Connection test for the UI: who the credentials act as, and the name of each project's board. */

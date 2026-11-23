@@ -14,7 +14,7 @@ import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyF
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { deleteSecret, getSecret, getSetting, inboxItems, Items, itemsByStatus, needsPerson, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK } from '../src/integrations/jira.ts';
+import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK, replaceAttachments, SPEC_DOC } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -1026,6 +1026,37 @@ test('database tools: only Claude Code and Codex reach them; a card waiting for 
   // It resumes on its own: not in the Inbox, nobody notified.
   assert.equal(needsPerson('waiting', 0, { needsTools: true }), false);
   assert.equal(needsPerson('waiting', 0, {}), true);
+});
+
+test('replaceAttachments: the new version first, then the older ones go; other files stay, a refused removal is reported', async () => {
+  const calls: string[] = [];
+  const real = globalThis.fetch;
+  const attachments = [
+    { id: '1', filename: 'spec.md' },
+    { id: '2', filename: 'tasks.md' },
+    { id: '3', filename: 'notes.md' },
+    { id: '4', filename: 'mockup-old.html' },
+    { id: '5', filename: 'developer-plan.md' },
+  ];
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    calls.push(`${method} ${String(url).replace(/^.*\/rest\//, '')}`);
+    if (method === 'GET') return Response.json({ fields: { attachment: attachments } });
+    if (String(url).endsWith('/attachment/4')) return new Response('forbidden', { status: 403 });
+    return method === 'DELETE' ? new Response(null, { status: 204 }) : Response.json([]);
+  }) as typeof fetch;
+  try {
+    // The Product Manager: every older spec document goes, tasks.md too (the new version left it out).
+    const left = await replaceAttachments('ABC-1', [{ name: 'spec.md', type: 'text/markdown', data: Buffer.from('v2') }], (name) => SPEC_DOC.test(name));
+    assert.deepEqual(calls, ['GET api/3/issue/ABC-1?fields=attachment', 'POST api/3/issue/ABC-1/attachments', 'DELETE api/3/attachment/1', 'DELETE api/3/attachment/2', 'DELETE api/3/attachment/4']);
+    assert.deepEqual(left, ['mockup-old.html']);
+    // The Developer: only the older copy of its plan.
+    calls.length = 0;
+    assert.deepEqual(await replaceAttachments('ABC-1', [{ name: 'developer-plan.md', type: 'text/markdown', data: Buffer.from('plan') }]), []);
+    assert.deepEqual(calls.slice(2), ['DELETE api/3/attachment/5']);
+  } finally {
+    globalThis.fetch = real;
+  }
 });
 
 test('validPromotion: only two different branch names of a repository of the project', () => {

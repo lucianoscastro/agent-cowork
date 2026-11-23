@@ -249,7 +249,13 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     const tasks = discovery ? [] : fromSpec(after, parseTasks);
     const next = discovery ? 'wait for a person to approve the discovery on the card' : `${cfg.approval ? 'wait for a person to approve it on the card before handing it' : 'hand it'} to the Developer`;
     if (dryRun) return { status: 'done', summary: `would attach ${changed ? docs.join(', ') : 'nothing (unchanged)'} to ${key}${cfg.subtasks && tasks.length ? `, keep a sub-task for each of its ${tasks.length} tasks` : ''} and ${next}: ${spec.title}\n\n${spec.summary}${notes}` };
-    if (changed) await jira.attach(key, [...after].map(([name, text]) => ({ name, type: name.endsWith('.html') ? 'text/html' : 'text/markdown', data: Buffer.from(text) })));
+    if (changed) {
+      // One current version on the card: every older document and prototype goes once the new set is attached (the
+      // run logs keep each version).
+      const files = [...after].map(([name, text]) => ({ name, type: name.endsWith('.html') ? 'text/html' : 'text/markdown', data: Buffer.from(text) }));
+      const left = await jira.replaceAttachments(key, files, (name) => jira.SPEC_DOC.test(name));
+      if (left.length) run.event('warn', 'Older versions stayed on the card', left.join(', '));
+    }
     // The sub-tasks only mirror the tasks: the hand-off goes on without them when Jira refuses.
     if (cfg.subtasks && !discovery) await syncSubtasks(run, key, tasks).catch((err) => run.event('warn', 'The sub-tasks were not updated', (err as Error).message));
     const attachedNote = `${discovery ? 'Discovery' : 'Spec'} documents ${changed ? 'attached' : 'unchanged'}: ${docs.join(', ')}\n\n${spec.summary}${notes}`;
