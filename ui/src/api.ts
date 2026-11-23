@@ -134,7 +134,7 @@ export type Sections = {
   general: { language: 'en-US' | 'pt-BR' | 'es-ES'; pollSeconds: number; fallback: boolean };
   github: { gitName: string; gitEmail: string };
   /** readyJql: the cards any agent may take from a board; each agent adds its own label. */
-  jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; reviewTransition: string; readyTransition: string; worklog: boolean };
+  jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; reviewTransition: string; readyTransition: string; assign: boolean; worklog: boolean };
   notifications: { uiUrl: string; events: Record<NotifyEvent, boolean> };
   'providers.claude': { authMethod: 'api-key' | 'account'; defaultModel: string };
   'providers.codex': { authMethod: 'api-key' | 'account'; defaultModel: string };

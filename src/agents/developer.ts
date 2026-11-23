@@ -203,7 +203,10 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
   const cfg = read('agents.developer');
   const language = outputLanguage();
   const issue = await jira.getIssue(key);
-  if (!dryRun) await jira.moveCard(key, 'start');
+  if (!dryRun) {
+    const refused = await jira.takeCard(key);
+    if (refused) run.event('warn', 'The card was not assigned to the Jira account', refused);
+  }
 
   /** Posts to the card, moves it to Blocked, and ends the run waiting for a human comment. */
   const block = async (status: 'waiting' | 'parked', text: string, intro?: string): Promise<RunEnd> => {

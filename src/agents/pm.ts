@@ -116,7 +116,10 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
   // Put back in the queue with nothing new on the card (Retry, a restart): it keeps waiting.
   if (approvalSince && !verdict) return { status: 'waiting', summary: `Waiting for a person to approve the ${discovery ? 'discovery' : 'spec'} on ${key}`, data: { waitingSince: approvalSince, approval: true, discovery } };
   // Taken, as every agent takes a card, out of the waiting status too; an approved discovery stays in it while its cards are built.
-  if (!dryRun) await jira.moveCard(key, 'start');
+  if (!dryRun) {
+    const refused = await jira.takeCard(key);
+    if (refused) run.event('warn', 'The card was not assigned to the Jira account', refused);
+  }
   if (approvalSince) {
     if (verdict === 'approved' && discovery) {
       run.stage('Hand-off');

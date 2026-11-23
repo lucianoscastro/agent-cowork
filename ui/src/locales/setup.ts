@@ -9,6 +9,9 @@ const translations = {
     'Remove this project? Its agents stop working on it.': 'Remover este projeto? Os agentes param de trabalhar nele.',
     'Remove project': 'Remover projeto',
     'Import project': 'Importar projeto',
+    'Assign the card to this Jira account when an agent takes it': 'Atribuir o card a esta conta do Jira quando um agente pega',
+    'So the board shows who is on it. The account needs the Assign issues and Assignable user permissions (Check on Jira, in Projects).':
+      'Assim o board mostra quem está nele. A conta precisa das permissões Assign issues e Assignable user (Verificar no Jira, em Projetos).',
     'Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run':
       'Registrar cada run de agente no card como work log do Jira: quanto tempo levou, os runtimes, tokens e custo, e um link para a run',
     "It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.":
@@ -224,6 +227,9 @@ const translations = {
     'Remove this project? Its agents stop working on it.': '¿Quitar este proyecto? Sus agentes dejan de trabajar en él.',
     'Remove project': 'Quitar proyecto',
     'Import project': 'Importar proyecto',
+    'Assign the card to this Jira account when an agent takes it': 'Asignar la tarjeta a esta cuenta de Jira cuando un agente la toma',
+    'So the board shows who is on it. The account needs the Assign issues and Assignable user permissions (Check on Jira, in Projects).':
+      'Así el tablero muestra quién está en ella. La cuenta necesita los permisos Assign issues y Assignable user (Comprobar en Jira, en Proyectos).',
     'Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run':
       'Registrar cada ejecución de agente en su tarjeta como registro de trabajo de Jira: cuánto tardó, los runtimes, tokens y costo, y un enlace a la ejecución',
     "It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.":

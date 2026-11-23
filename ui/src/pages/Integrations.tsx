@@ -116,6 +116,12 @@ export function Integrations() {
           </Field>
         </div>
         <Toggle
+          checked={jira.assign}
+          onChange={(assign) => setJira({ ...jira, assign })}
+          label="Assign the card to this Jira account when an agent takes it"
+        />
+        <p className="hint">{t('So the board shows who is on it. The account needs the Assign issues and Assignable user permissions (Check on Jira, in Projects).')}</p>
+        <Toggle
           checked={jira.worklog}
           onChange={(worklog) => setJira({ ...jira, worklog })}
           label="Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run"

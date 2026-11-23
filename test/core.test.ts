@@ -14,7 +14,7 @@ import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyF
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
 import { deleteSecret, getSecret, getSetting, inboxItems, Items, itemsByStatus, needsPerson, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK, replaceAttachments, SPEC_DOC } from '../src/integrations/jira.ts';
+import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK, replaceAttachments, SPEC_DOC, takeCard } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -1028,6 +1028,44 @@ test('database tools: only Claude Code and Codex reach them; a card waiting for 
   assert.equal(needsPerson('waiting', 0, {}), true);
 });
 
+test('takeCard: assigned to the Jira account before it moves; a refused assignment is reported and the card still moves', async () => {
+  const before = read('jira');
+  write('jira', { ...before, startTransition: 'In Progress', assign: true });
+  const calls: string[] = [];
+  let refuse = false;
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    const path = String(url).replace(/^.*\/rest\//, '');
+    calls.push(`${method} ${path}${init?.body ? ` ${String(init.body)}` : ''}`);
+    if (path === 'api/3/myself') return Response.json({ accountId: 'bot-1' });
+    if (path.endsWith('/assignee')) return refuse ? new Response('no permission', { status: 403 }) : new Response(null, { status: 204 });
+    if (method === 'GET') return Response.json({ transitions: [{ id: '11', name: 'Start', to: { name: 'In Progress' } }] });
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+  try {
+    assert.equal(await takeCard('ABC-2'), undefined);
+    assert.deepEqual(calls, [
+      'GET api/3/myself',
+      'PUT api/3/issue/ABC-2/assignee {"accountId":"bot-1"}',
+      'GET api/3/issue/ABC-2/transitions',
+      'POST api/3/issue/ABC-2/transitions {"transition":{"id":"11"}}',
+    ]);
+    calls.length = 0;
+    refuse = true;
+    assert.match((await takeCard('ABC-2')) ?? '', /403 no permission/);
+    assert.equal(calls.at(-1), 'POST api/3/issue/ABC-2/transitions {"transition":{"id":"11"}}');
+    // Turned off: the card only moves.
+    write('jira', { ...before, startTransition: 'In Progress', assign: false });
+    calls.length = 0;
+    assert.equal(await takeCard('ABC-2'), undefined);
+    assert.deepEqual(calls, ['GET api/3/issue/ABC-2/transitions', 'POST api/3/issue/ABC-2/transitions {"transition":{"id":"11"}}']);
+  } finally {
+    globalThis.fetch = real;
+    write('jira', before);
+  }
+});
+
 test('replaceAttachments: the new version first, then the older ones go; other files stay, a refused removal is reported', async () => {
   const calls: string[] = [];
   const real = globalThis.fetch;
@@ -1213,14 +1251,14 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   assert.equal(read('agents.developer').label, 'build-me');
   // The card's flow is shared too: the Developer's start and blocked moves (an empty one stays empty), and a hand-off
   // back to the status the JQL names.
-  const flow = { readyJql: 'statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '', reviewTransition: '', readyTransition: 'Ready for AI', worklog: false };
+  const flow = { readyJql: 'statusCategory != Done AND status = "Ready for AI"', startTransition: 'Doing', blockedTransition: '', reviewTransition: '', readyTransition: 'Ready for AI', assign: true, worklog: false };
   assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
   assert.deepEqual(getSetting<Record<string, unknown>>('jira', {}), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', ...flow });
   assert.equal(cardJql('agent-spec'), 'labels = "agent-spec" AND (statusCategory != Done AND status = "Ready for AI")');
   assert.throws(() => write('jira', { ...read('jira'), readyJql: ' ' }), /readyJql is required/);
   // Saved with the shared JQL but before the flow: the flow is added, the JQL kept.
   putSetting('jira', { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done' });
-  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', reviewTransition: '', readyTransition: '', worklog: false });
+  assert.deepEqual(read('jira'), { url: 'https://acme.atlassian.net', email: 'bot@acme.example', readyJql: 'statusCategory != Done', startTransition: 'Doing', blockedTransition: '', reviewTransition: '', readyTransition: '', assign: true, worklog: false });
   assert.equal(write('jira', { ...read('jira'), readyTransition: 'Ready for AI' }).readyTransition, 'Ready for AI');
   // A comment's **text** is bold, so what people must do stands out; an unpaired ** stays as typed.
   const bold = (text: string) => ({ type: 'text', text, marks: [{ type: 'strong' }] });

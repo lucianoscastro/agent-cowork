@@ -181,6 +181,21 @@ export function moveCard(key: string, step: FlowStep): Promise<void> {
   return name ? transition(key, name) : Promise.resolve();
 }
 
+/**
+ * An agent takes a card: with `jira.assign` on, it is assigned to the account the agents act as, so the board shows who
+ * is on it (first, as a workflow may ask for an assignee to move a card), then it moves along the shared flow. A refused
+ * assignment does not stop the work: its reason is returned.
+ */
+export async function takeCard(key: string): Promise<string | undefined> {
+  const refused = read('jira').assign
+    ? await api<{ accountId: string }>('api/3/myself')
+        .then((me) => api(`api/3/issue/${key}/assignee`, { method: 'PUT', body: { accountId: me.accountId } }))
+        .then(() => undefined, (err: Error) => err.message)
+    : undefined;
+  await moveCard(key, 'start');
+  return refused;
+}
+
 /** Moves an issue to the first status of a category (`indeterminate`: in progress, `done`), whatever the workflow names it. */
 export const moveTo = (key: string, category: 'indeterminate' | 'done') => transitionBy(key, `to a ${category} status`, (t) => t.to.statusCategory?.key === category);
 
@@ -365,6 +380,18 @@ export async function checkBoard(boardId: string): Promise<Check[]> {
     ['Developer · PRs merged', dev.mergedTransition],
     ['Dependabot · CI card moves to', dependabot.cardTransition],
   ];
+  if (flow.assign) {
+    const wanted = { ASSIGN_ISSUES: 'Assign issues', ASSIGNABLE_USER: 'Assignable user' };
+    const { permissions } = await api<{ permissions: Record<string, { havePermission?: boolean }> }>(
+      `api/3/mypermissions?projectKey=${projectKey}&permissions=${Object.keys(wanted).join(',')}`,
+    );
+    const missing = Object.entries(wanted).filter(([p]) => !permissions[p]?.havePermission).map(([, name]) => name);
+    checks.push({
+      label: 'Agents · assigned when taken',
+      ok: missing.length === 0,
+      detail: missing.length ? `the Jira account lacks the ${missing.join(' and ')} permission on ${projectKey}: the cards it takes keep their assignee` : 'the Jira account can assign the cards it takes to itself',
+    });
+  }
   if (flow.worklog) {
     const on = await api<{ timeTrackingEnabled?: boolean }>('api/3/configuration').then((c) => c.timeTrackingEnabled === true, () => false);
     checks.push({ label: 'Agents · work log', ok: on, detail: on ? 'time tracking is on' : 'time tracking is off on this site (Jira settings → Issues → Time tracking): the runs cannot log their time' });
