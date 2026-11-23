@@ -189,6 +189,7 @@ async function callProvider<T>(id: ProviderId, req: ProviderRequest): Promise<Pr
   const call = () =>
     id === 'claude' ? runClaude<T>({ ...req, model }) : id === 'codex' ? runCodex<T>({ ...req, model }) : runAgy<T>({ ...req, model });
   const guarded = () => (req.mode === 'read-only' ? guardReadOnly(req.run, req.label, req.cwd, call) : call());
+  const start = Date.now();
   const result = await guarded().catch((err: Error) => {
     // The provider's own report (rate limit event, session file) names the exact reset; else a window already
     // full; else the error text (an hour when it names none). Only a limit error pauses.
@@ -197,7 +198,7 @@ async function callProvider<T>(id: ProviderId, req: ProviderRequest): Promise<Pr
     if (until) recordLimits(id, { limitedUntil: new Date(until).toISOString() });
     throw err;
   });
-  req.run.event('usage', `${req.label}: usage`, { ...result.usage, provider: id, model: model ?? 'default' });
+  req.run.event('usage', `${req.label}: usage`, { ...result.usage, provider: id, model: model ?? 'default', durationMs: Date.now() - start });
   return result;
 }
 

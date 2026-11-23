@@ -6,7 +6,7 @@ import { env } from './env.ts';
 import { addWorklog } from './integrations/jira.ts';
 import { AGENT_NAMES } from './notify.ts';
 import { log } from './sh.ts';
-import { runsUsage } from './usage.ts';
+import { runModels } from './usage.ts';
 
 export type RunStatus = 'running' | 'done' | 'failed' | 'parked' | 'waiting' | 'killed';
 export type RunEnd = { status: Exclude<RunStatus, 'running'>; summary?: string; data?: Record<string, unknown> };
@@ -110,21 +110,34 @@ export async function withRun(meta: RunMeta, fn: (run: Run) => Promise<RunEnd>):
   return end;
 }
 
-/** A run's work log on its card: how long it took, the runtimes it called, its tokens and cost, and a link to it. Exported for tests. */
+const count = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+const span = (ms: number) => {
+  const m = Math.round(ms / 60_000);
+  return m < 1 ? `${Math.round(ms / 1000)}s` : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+};
+
+/**
+ * A run's work log on its card, one line each: the run with its tokens and cost, then every model it called with that
+ * model's time, tokens and cost; and a link to the run. Exported for tests.
+ */
 export function worklog(id: number, agent: AgentId, started: string, ended: string, status: RunStatus): { seconds: number; text: string; link?: string } {
-  const models = sql()
-    .prepare("SELECT DISTINCT json_extract(data, '$.provider') AS provider, json_extract(data, '$.model') AS model FROM run_events WHERE run_id = ? AND kind = 'usage' ORDER BY id")
-    .all(id) as { provider: string | null; model: string | null }[];
-  const { tokens, cost } = runsUsage([id]).get(id) ?? { tokens: 0, cost: 0 };
-  const count = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : tokens >= 1e3 ? `${Math.round(tokens / 1e3)}k` : String(tokens);
-  const text = [
+  const models = runModels(id);
+  const use = (tokens: number, cost: number) => [tokens > 0 && `${count(tokens)} tokens`, cost > 0 && `US$${cost.toFixed(2)}`];
+  const run = [
     `agentCowork · ${AGENT_NAMES[agent] ?? agent} · run #${id} (${status})`,
-    models.map((m) => [m.provider, m.model !== 'default' && m.model].filter(Boolean).join(' ')).join(', '),
-    tokens > 0 && `${count} tokens`,
-    cost > 0 && `US$${cost.toFixed(2)}`,
-  ].filter(Boolean);
+    ...use(models.reduce((s, m) => s + m.tokens, 0), models.reduce((s, m) => s + m.cost, 0)),
+  ];
+  const lines = models.map((m) => {
+    const name = [m.provider ?? 'unknown', m.model !== 'default' && m.model].filter(Boolean).join(' ');
+    const detail = [m.ms !== null && span(m.ms), ...use(m.tokens, m.cost)].filter(Boolean);
+    return detail.length ? `${name}: ${detail.join(' · ')}` : name;
+  });
   const { uiUrl } = read('notifications');
-  return { seconds: (Date.parse(ended) - Date.parse(started)) / 1000, text: text.join(' · '), link: uiUrl ? `${uiUrl.replace(/\/$/, '')}/#/runs/${id}` : undefined };
+  return {
+    seconds: (Date.parse(ended) - Date.parse(started)) / 1000,
+    text: [run.filter(Boolean).join(' · '), ...lines].join('\n'),
+    link: uiUrl ? `${uiUrl.replace(/\/$/, '')}/#/runs/${id}` : undefined,
+  };
 }
 
 export function killRun(id: number): boolean {

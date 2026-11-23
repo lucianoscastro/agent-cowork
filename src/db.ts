@@ -31,6 +31,15 @@ export function openDb(dir: string, key: string): DatabaseSync {
   mkdirSync(dir, { recursive: true });
   db = new DatabaseSync(join(dir, 'agentcowork.db'));
   db.exec(SCHEMA);
+  // Version 1: agy's usage was recorded with its cache reads taken out of its input, which already left them out (the
+  // input went negative): they are added back, once.
+  if ((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version < 1) {
+    db.exec(`BEGIN;
+      UPDATE run_events SET data = json_set(data, '$.inputTokens', json_extract(data, '$.inputTokens') + COALESCE(json_extract(data, '$.cacheReadTokens'), 0))
+        WHERE kind = 'usage' AND json_extract(data, '$.provider') = 'agy' AND json_extract(data, '$.inputTokens') IS NOT NULL;
+      PRAGMA user_version = 1;
+      COMMIT;`);
+  }
   secretKey = key;
   return db;
 }

@@ -241,10 +241,13 @@ export function comment(key: string, text: string, callout?: Callout): Promise<{
  * Jira's smallest entry is a minute.
  */
 export function addWorklog(key: string, started: string, seconds: number, text: string, link?: string): Promise<unknown> {
-  const content = [{ type: 'text', text }, ...(link ? [{ type: 'text', text: ' · ' }, { type: 'text', text: link, marks: [{ type: 'link', attrs: { href: link } }] }] : [])];
+  // One paragraph per line of the text, the link at the end of the first.
+  const [first, ...rest] = text.split('\n').map((line) => [{ type: 'text', text: line }] as object[]);
+  if (link) first.push({ type: 'text', text: ' · ' }, { type: 'text', text: link, marks: [{ type: 'link', attrs: { href: link } }] });
+  const content = [first, ...rest].map((line) => ({ type: 'paragraph', content: line }));
   return api(`api/3/issue/${key}/worklog?adjustEstimate=leave&notifyUsers=false`, {
     method: 'POST',
-    body: { started: started.replace('Z', '+0000'), timeSpentSeconds: Math.max(60, Math.round(seconds / 60) * 60), comment: { type: 'doc', version: 1, content: [{ type: 'paragraph', content }] } },
+    body: { started: started.replace('Z', '+0000'), timeSpentSeconds: Math.max(60, Math.round(seconds / 60) * 60), comment: { type: 'doc', version: 1, content } },
   });
 }
 

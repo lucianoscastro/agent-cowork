@@ -13,8 +13,8 @@ import { asset } from '../src/assets.ts';
 import { dbSecretName, outputLanguage, parseTestVars, projectRepos, read, readyFromTrigger, readyStatus, SECRETS, triggerLabel, validateProjects, verifyCommands, write } from '../src/config.ts';
 import { connectionUrl, databasesPrompt, grantDatabases, mongoRefusal, redact, splitBatches, sqlRefusal, transactionControl } from '../src/databases.ts';
 import { decrypt, encrypt, signSession, verifySession } from '../src/crypto.ts';
-import { deleteSecret, getSecret, getSetting, inboxItems, Items, itemsByStatus, needsPerson, onInbox, openDb, putSetting, setSecret } from '../src/db.ts';
-import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK, replaceAttachments, SPEC_DOC, takeCard } from '../src/integrations/jira.ts';
+import { deleteSecret, getSecret, getSetting, inboxItems, Items, itemsByStatus, needsPerson, onInbox, openDb, putSetting, setSecret, sql } from '../src/db.ts';
+import { adfToText, cardJql, commentDoc, flowStatus, currentDocs, hasAnswer, markdownName, missing, toAdf, BOT_MARK, replaceAttachments, SPEC_DOC, takeCard, addWorklog } from '../src/integrations/jira.ts';
 import { strictSchema } from '../src/providers/codex.ts';
 import { mainResult } from '../src/providers/claude.ts';
 import { agyLimits, claudeLimits, codexLimits, lastCodexWindows } from '../src/providers/limits.ts';
@@ -30,7 +30,8 @@ import { runVerify } from '../src/agents/verify.ts';
 import { forEachLimit, maskSecrets, renderPrompt, run as sh, safeEnv, untrusted, withLock } from '../src/sh.ts';
 
 const KEY = 'test-secret-key-0123456789';
-openDb(mkdtempSync(join(tmpdir(), 'acw-db-')), KEY);
+const DB_DIR = mkdtempSync(join(tmpdir(), 'acw-db-'));
+openDb(DB_DIR, KEY);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 type AdfNodeForTest = { content: unknown[] };
@@ -500,13 +501,16 @@ test('usage: model calls are summed per run, agent, model and day', async () => 
   assert.equal(summary.byDay[0].day, new Date().toISOString().slice(0, 10));
 });
 
-test('worklog: a run on a card logs its time, runtimes, tokens, cost and a link to it', async () => {
+test('worklog: a run on a card logs its time, tokens and cost, each model with its own, and a link to it', async () => {
   let id = 0;
   // A dry run never writes to Jira: only what its entry would say is checked here.
   await withRun({ agent: 'pm', item: 'WL-1', dryRun: true, card: 'WL-1' }, async (run) => {
     id = run.id;
-    run.event('usage', 'specify: usage', { inputTokens: 1_000_000, outputTokens: 234_000, costUsd: 0.84, provider: 'codex', model: 'gpt-x' });
-    run.event('usage', 'learn: usage', { inputTokens: 100, provider: 'claude', model: 'default' });
+    run.event('usage', 'specify: usage', { inputTokens: 1_000_000, outputTokens: 234_000, costUsd: 0.84, provider: 'codex', model: 'gpt-x', durationMs: 600_000 });
+    run.event('usage', 'learn: usage', { inputTokens: 100, provider: 'claude', model: 'default', durationMs: 20_000 });
+    run.event('usage', 'review: usage', { inputTokens: 1_000, cacheReadTokens: 4_000, provider: 'codex', model: 'gpt-x', durationMs: 150_000 });
+    // Recorded before calls had their time.
+    run.event('usage', 'old: usage', { inputTokens: 50, provider: 'agy', model: 'default' });
     return { status: 'waiting' };
   });
   const rawNotifications = getSetting<Record<string, unknown>>('notifications', {});
@@ -514,12 +518,48 @@ test('worklog: a run on a card logs its time, runtimes, tokens, cost and a link 
   const w = worklog(id, 'pm', '2026-11-19T17:00:00.000Z', '2026-11-19T17:23:30.000Z', 'waiting');
   putSetting('notifications', rawNotifications);
   assert.equal(w.seconds, 1410);
-  assert.equal(w.text, `agentCowork · Product Manager · run #${id} (waiting) · codex gpt-x, claude · 1.2M tokens · US$0.84`);
+  assert.equal(
+    w.text,
+    [`agentCowork · Product Manager · run #${id} (waiting) · 1.2M tokens · US$0.84`, 'codex gpt-x: 13m · 1.2M tokens · US$0.84', 'claude: 20s · 100 tokens', 'agy: 50 tokens'].join('\n'),
+  );
   assert.equal(w.link, `https://cowork.example/#/runs/${id}`);
   // No model call and no UI address: the time alone, without a link.
   let quiet = 0;
   await withRun({ agent: 'developer', item: 'WL-2', dryRun: true, card: 'WL-2' }, async (run) => ((quiet = run.id), { status: 'done' }));
   assert.deepEqual(worklog(quiet, 'developer', '2026-11-19T17:00:00.000Z', '2026-11-19T17:00:20.000Z', 'done'), { seconds: 20, text: `agentCowork · Developer · run #${quiet} (done)`, link: undefined });
+});
+
+test('addWorklog: one paragraph per line, the link after the first; a minute at least', async () => {
+  let sent: { timeSpentSeconds: number; comment: { content: { content: { text: string; marks?: unknown[] }[] }[] } } | undefined;
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => ((sent = JSON.parse(String(init?.body))), Response.json({}))) as typeof fetch;
+  try {
+    await addWorklog('ABC-3', '2026-11-23T17:00:00.000Z', 20, 'run #9 · 1k tokens\nclaude: 20s · 1k tokens', 'https://cowork.example/#/runs/9');
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(sent?.timeSpentSeconds, 60);
+  assert.deepEqual(
+    sent?.comment.content.map((p) => p.content.map((t) => t.text).join('')),
+    ['run #9 · 1k tokens · https://cowork.example/#/runs/9', 'claude: 20s · 1k tokens'],
+  );
+  assert.deepEqual(sent?.comment.content[0].content.at(-1)?.marks, [{ type: 'link', attrs: { href: 'https://cowork.example/#/runs/9' } }]);
+});
+
+test('openDb: agy usage recorded with its cache reads taken out of its input gets them back, once', async () => {
+  let id = 0;
+  await withRun({ agent: 'developer', item: 'AGY-1', dryRun: true }, async (run) => {
+    id = run.id;
+    run.event('usage', 'plan: usage', { inputTokens: -300_000, cacheReadTokens: 400_000, outputTokens: 2_000, provider: 'agy', model: 'default' });
+    run.event('usage', 'review: usage', { inputTokens: 5_000, cacheReadTokens: 1_000, provider: 'codex', model: 'default' });
+    return { status: 'done' };
+  });
+  const inputs = () => (sql().prepare("SELECT json_extract(data, '$.inputTokens') AS input FROM run_events WHERE run_id = ? AND kind = 'usage' ORDER BY id").all(id) as { input: number }[]).map((r) => r.input);
+  sql().exec('PRAGMA user_version = 0');
+  openDb(DB_DIR, KEY);
+  assert.deepEqual(inputs(), [100_000, 5_000]);
+  openDb(DB_DIR, KEY);
+  assert.deepEqual(inputs(), [100_000, 5_000]);
 });
 
 test('suite detection: Playwright, Cucumber and Cypress from the repository files, nothing assumed', () => {

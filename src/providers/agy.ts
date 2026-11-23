@@ -68,9 +68,9 @@ export async function runAgy<T>(req: ProviderRequest): Promise<ProviderResult<T>
   }
   return {
     output: envelope.structured_output,
-    // Gemini counts cached input inside the input tokens.
+    // agy counts its cache reads apart from the input tokens (they are often several times the input).
     usage: {
-      inputTokens: envelope.usage?.input_tokens === undefined ? undefined : envelope.usage.input_tokens - (envelope.usage.cache_read_tokens ?? 0),
+      inputTokens: envelope.usage?.input_tokens,
       cacheReadTokens: envelope.usage?.cache_read_tokens,
       outputTokens: envelope.usage?.output_tokens,
     },
