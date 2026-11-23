@@ -255,7 +255,7 @@ async function learnFromOutcome(item: Item, project: Project, prs: WatchedPr[], 
     }
     if (!signals.length) return;
     const states = snaps.map((s, i) => `${prs[i].url} ${s.state.toLowerCase()}`).join(', ');
-    await withRun({ agent: 'developer', item: item.key, url: prs[0].url, title: `${project.name} · PR outcome`, dryRun: false }, (run) =>
+    await withRun({ agent: 'developer', item: item.key, url: prs[0].url, title: `${project.name} · PR outcome`, dryRun: false, card: item.key }, (run) =>
       learning(run, project.name, cfg.lead, false, async (collected) => {
         collected.push(...signals);
         return { status: 'done', summary: `Learned from how the pull requests ended: ${states}` };
