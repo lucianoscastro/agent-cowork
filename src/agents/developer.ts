@@ -289,7 +289,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       language,
       reviewContext: '',
       plan: '',
-      brain: await brainContext(project.name, workspace, `${issue.fields.summary}\n${description}`),
+      brain: await brainContext(project.name, workspace, `${issue.fields.summary}\n${description}`, { cwd: workspace, dirs: repos.map((r) => r.work.dir) }),
       databases: databasesPrompt(project),
       spec: specBrief('spec', docs, discovery),
       task: '',
@@ -382,8 +382,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     const subagents =
       cfg.lead.provider === 'claude'
         ? {
-            coder: { description: 'Implements one well-defined step of the approved plan in the given files.', prompt: await renderPrompt('developer/agents/coder', {}), model: cfg.coderModel || undefined },
-            tester: { description: 'Writes and runs tests for one change of the approved plan.', prompt: await renderPrompt('developer/agents/tester', {}), model: cfg.testerModel || undefined },
+            coder: { description: 'Implements one well-defined step of the approved plan, editing only the given files.', prompt: await renderPrompt('developer/agents/coder', {}), model: cfg.coderModel || undefined },
+            tester: { description: 'Writes and runs tests for one change of the approved plan, editing test files only.', prompt: await renderPrompt('developer/agents/tester', {}), model: cfg.testerModel || undefined },
           }
         : undefined;
     // --- Validate: with a spec, every test its checks table names is in the change, under its case name ---

@@ -23,7 +23,7 @@ You are reviewing pull request {{url}} ("{{title}}"). Decide whether it can be a
 2. Apply the criteria of your `code-rules` and `review-code` skills.
 3. Look for correctness bugs, security issues, regressions, missing error handling at trust boundaries, and clear readability or maintainability problems. When the diff changes UI, also apply `ui-taste` (System-bound) and `check-accessibility`.
 4. Keep only findings you are confident about and that are worth the author's time.
-5. Respect what this team already settled: a convention or decision in the project brain, or a finding the author answered in a reply above. Raise it again only when the code shows the answer is wrong, and say why.
+5. Respect what this team already settled: a convention or decision in the project brain or in the repository's rules (its instruction files and documents), a weakness they record as known debt (raise it only when this change makes it worse), or a finding the author answered in a reply above. Raise it again only when the code shows the answer is wrong, and say why.
 
 ## Plan B
 

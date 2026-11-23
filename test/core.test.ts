@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { decide } from '../src/agents/approver.ts';
 import { checksState, parseBump, parseBumps, updateType } from '../src/agents/dependabot.ts';
@@ -940,7 +940,7 @@ test('brain: people add, edit and delete notes, never over a change they did not
   assert.equal(await putNote(dir, 'decisions/paging.md', '# Mine', opened), false);
   assert.equal(await deleteNote(dir, 'decisions/paging.md', opened), false);
   // An agent working in a checkout gets the note in its prompt, and no copy to grep.
-  const inline = await brainContext('Shop', undefined, 'cursor paging of the reports');
+  const inline = await brainContext('Shop', undefined, 'cursor paging of the reports', { cwd: tmpdir(), dirs: [] });
   assert.ok(inline.includes('<brain-note path="decisions/paging.md">') && inline.includes('Updated by a run.') && !inline.includes('brain/INDEX.md'));
   // A folder of the vault linked elsewhere is never written through.
   const { symlink } = await import('node:fs/promises');
@@ -951,6 +951,81 @@ test('brain: people add, edit and delete notes, never over a change they did not
   assert.equal(await deleteNote(dir, 'decisions/paging.md', await hashOf()), true);
   assert.ok(!existsSync(join(dir, 'decisions/paging.md')));
   assert.ok(!(await readFile(join(dir, 'INDEX.md'), 'utf8')).includes('[[decisions/paging]]'));
+});
+
+test('repoGuide: every prompt lists what each checkout tells its agents; a link is never followed', async () => {
+  const { mkdtemp, mkdir, symlink, writeFile } = await import('node:fs/promises');
+  const { brainContext, repoGuide } = await import('../src/brain.ts');
+  const workspace = await mkdtemp(join(tmpdir(), 'guide-'));
+  const api = join(workspace, 'api');
+  const put = async (path: string, text = '# x\n') => (await mkdir(dirname(join(api, path)), { recursive: true }), writeFile(join(api, path), text));
+  await put('CLAUDE.md');
+  await put('AGENTS.md');
+  await put('.agents/00-INDEX.md');
+  await put('.agents/01-rules.md');
+  await put('.agents/business-rules/a.md');
+  await put('.agents/business-rules/b.md');
+  await put('.agents/roles/README.md');
+  await put('.agents/roles/qa-engineer.md', '# QA Engineer\n\nOwns the tests; the only role that edits them.\n');
+  await put('.claude/agents/qa-engineer.md', '---\nname: qa-engineer\ndescription: Writes and reviews tests. Edits tests only.\ntools: Read\n---\n\nRead .agents/roles/qa-engineer.md.\n');
+  await put('.claude/agents/solo.md', '---\nname: solo\ndescription: "A wrapper with no role file."\n---\nBody.\n');
+  // A role the checkout links elsewhere: neither listed nor read, so no file outside the checkout reaches a prompt.
+  const outside = await mkdtemp(join(tmpdir(), 'outside-'));
+  await writeFile(join(outside, 'secret.md'), '# S\n\nTOKEN=abc\n');
+  await symlink(join(outside, 'secret.md'), join(api, '.agents/roles/leak.md'));
+  await mkdir(join(workspace, 'web'));
+  await symlink(outside, join(workspace, 'web', '.agents'));
+  const guide = await repoGuide({ cwd: workspace, dirs: [api, join(workspace, 'web')] });
+  assert.match(guide, /^## Repository rules\n/);
+  assert.ok(guide.includes('- `api/`:\n  - Instructions: `api/CLAUDE.md`, `api/AGENTS.md`'));
+  assert.ok(guide.includes('  - Docs in `api/.agents/` (start at `api/.agents/00-INDEX.md`): 00-INDEX.md, 01-rules.md, business-rules/ (2), roles/ (2)'));
+  assert.ok(guide.includes('    - `qa-engineer` (`api/.agents/roles/qa-engineer.md`): Writes and reviews tests. Edits tests only.'));
+  assert.ok(guide.includes('    - `solo` (`api/.claude/agents/solo.md`): A wrapper with no role file.'));
+  assert.ok(!guide.includes('leak') && !guide.includes('TOKEN') && !guide.includes('`web/`'));
+  // Working in the checkout itself; a role file alone gives its first line of text.
+  await writeFile(join(api, '.claude/agents/qa-engineer.md'), '---\nname: qa-engineer\n---\n');
+  const here = await repoGuide({ cwd: api, dirs: [api] });
+  assert.ok(here.includes('- This checkout:\n  - Instructions: `CLAUDE.md`, `AGENTS.md`'));
+  assert.ok(here.includes('    - `qa-engineer` (`.agents/roles/qa-engineer.md`): Owns the tests; the only role that edits them.'));
+  // Nothing to tell: no section; a repository in no project gets its guide alone.
+  assert.equal(await repoGuide({ cwd: workspace, dirs: [join(workspace, 'web')] }), '');
+  assert.equal(await brainContext(undefined, undefined, 'task', { cwd: api, dirs: [api] }), here);
+});
+
+test('completeIndex: the docs index names every file of the folder; the next run describes what the platform listed', async () => {
+  const { mkdtemp, mkdir, readFile, symlink, writeFile } = await import('node:fs/promises');
+  const { completeIndex } = await import('../src/agents/documenter.ts');
+  const dir = await mkdtemp(join(tmpdir(), 'docs-'));
+  const docs = join(dir, '.agents');
+  await mkdir(join(docs, 'roles'), { recursive: true });
+  await writeFile(join(docs, '00-INDEX.md'), '# Index\n\n- `01-rules.md`: the rules.\n\n## Glossary\n\nTerms.\n');
+  await writeFile(join(docs, '01-rules.md'), 'x');
+  await writeFile(join(docs, 'roles/qa engineer.md'), 'x');
+  await writeFile(join(docs, 'catalog.py'), 'x');
+  await writeFile(join(docs, '.gitkeep'), '');
+  await symlink(tmpdir(), join(docs, 'linked'));
+  assert.deepEqual(await completeIndex(dir, '.agents'), ['catalog.py', 'roles/qa engineer.md']);
+  const listed = await readFile(join(docs, '00-INDEX.md'), 'utf8');
+  assert.ok(listed.startsWith('# Index\n\n- `01-rules.md`: the rules.\n\n## Glossary\n\nTerms.\n\n## Not described yet\n'));
+  assert.ok(listed.endsWith('- [`catalog.py`](catalog.py)\n- [`roles/qa engineer.md`](roles/qa%20engineer.md)\n'));
+  // Run again with nothing new: the same list, the file unchanged.
+  assert.deepEqual(await completeIndex(dir, '.agents'), ['catalog.py', 'roles/qa engineer.md']);
+  assert.equal(await readFile(join(docs, '00-INDEX.md'), 'utf8'), listed);
+  // The next run describes one in the map and leaves the platform's section: only the other stays listed.
+  await writeFile(join(docs, '00-INDEX.md'), listed.replace('## Glossary', '- `catalog.py`: regenerates the catalog.\n\n## Glossary'));
+  assert.deepEqual(await completeIndex(dir, '.agents'), ['roles/qa engineer.md']);
+  // Every file described: the section goes.
+  const described = (await readFile(join(docs, '00-INDEX.md'), 'utf8')).replace('## Glossary', '- `roles/qa engineer.md`: the QA role.\n\n## Glossary');
+  await writeFile(join(docs, '00-INDEX.md'), described);
+  assert.deepEqual(await completeIndex(dir, '.agents'), []);
+  assert.ok(!(await readFile(join(docs, '00-INDEX.md'), 'utf8')).includes('Not described yet'));
+  // No index written: one is started with the list; no folder: nothing.
+  const bare = await mkdtemp(join(tmpdir(), 'docs-'));
+  await mkdir(join(bare, 'docs'));
+  await writeFile(join(bare, 'docs/a.md'), 'x');
+  assert.deepEqual(await completeIndex(bare, 'docs'), ['a.md']);
+  assert.match(await readFile(join(bare, 'docs/00-INDEX.md'), 'utf8'), /^# docs\n\n## Not described yet\n/);
+  assert.deepEqual(await completeIndex(bare, 'missing'), []);
 });
 
 test("PR outcome: people's own commits and what they wrote after the last follow-up are the lesson, not merges or the agent", async () => {

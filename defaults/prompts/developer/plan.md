@@ -39,7 +39,7 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
    - **handoff**: what the card needs can only be done by a person with access agents do not have (cloud or infrastructure settings, secrets, third-party consoles, merging or deploying). Write in `plan`, in {{language}}, the exact checklist for that person.
    - **needs_tools**: only when the project lists databases above and this session has no database tools (no `db_list`, `db_schema` or `db_query`), and the card cannot be done right without them: checking or changing data, a schema the code does not show, or validating a database script you would write. Working from the code there would be guessing. Write in `plan`, in {{language}}, what you need to check in the database and why. The card waits for a runtime that has the tools and comes back then. Never declare it when you have the tools, or when the code alone settles the work.
    Never declare promote, answer or handoff to avoid a code change the card asks for.
-1. Read each repository's agent instructions (`CLAUDE.md`, `AGENTS.md`) and README.
+1. Read each repository's agent instructions (`CLAUDE.md`, `AGENTS.md`), README and, for the parts this card touches, the documents and the specialist role its Repository rules list.
 2. Trace the real flow end to end for this issue. For a bug, find the root cause and every caller of the code you will change. When the answer depends on data or on the schema actually deployed and the project lists databases, check it with the database tools instead of assuming.
 3. Write the plan:
    - **Approach**: the root cause or design, in a few sentences.
@@ -48,11 +48,13 @@ Plan how to resolve Jira issue {{key}} of the project "{{project}}": "{{summary}
    - **UI** (only when the issue changes what people see): per `ui-taste`, the one-line read (what the screen is, for whom, its one job), the existing tokens and components it reuses, and its empty, loading and error states.
    - **Risks**: contracts between front end and back end, migrations, data, security.
    - **Out of scope**: what you will deliberately not touch.
+   - **Unconfirmed**: what you could not verify in the code, the data or the documents, and how the build or a person checks it.
 
 ## Plan B
 
 - A requirement is missing or ambiguous, expectations conflict, or the issue is too large for one pull request per repository: ask. Put **all** questions in one answer, numbered, each saying why it matters. Don't guess.
 - The discussion already answers a question: use the answer, and don't ask again.
+- A choice the card leaves open: decide or ask as your agent instructions say. A technical, reversible choice inside the repository's patterns is yours: make it and say why in the plan.
 - If a reviewer's findings are included above, address each one in the revised plan, or say why it does not apply.
 
 ## Edges

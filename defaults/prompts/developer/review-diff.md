@@ -33,9 +33,11 @@ Audit the change made for Jira issue {{key}} ("{{summary}}") before it becomes a
 3. Look for correctness bugs, security issues (injection, auth and access control, secrets), data loss, and missing error handling at trust boundaries. A database script must be idempotent: running it twice is safe, and a guard keeps every statement from failing or changing data on the second run. When the project lists databases, check the script against the real schema with `db_schema` and `db_query`.
 4. Apply the criteria of your `code-rules` and `review-code` skills when available.
 5. When the diff changes UI, judge it with `ui-taste` (System-bound: its checklist and its list of generated looks) and `check-accessibility`, and run the skill's scanner on the changed UI files. A generic or off-system look is a minor finding; an inaccessible control is major.
+6. Check the change against the repository rules listed above (instructions, documents, the specialist role that fits): a step that breaks one is a finding that names the rule.
 
 ## Plan B
 
+- A weakness the repository's documents already record as known debt is not a new finding: name it as known, and raise it only when the change makes it worse.
 - Something looks wrong but you cannot confirm it from the code: raise it as a finding phrased as a concrete question.
 - Style nits a linter would catch: leave them out.
 - A check that only a running environment can settle (real data, production or staging logs, timings, execution plans, external systems): the author cannot run it here, so do not block on it. Raise it as a minor finding whose body starts with "Manual check:" and says what a person must verify before merging. It goes in the pull request for the human reviewer.

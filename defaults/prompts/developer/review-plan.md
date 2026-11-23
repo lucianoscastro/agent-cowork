@@ -33,9 +33,11 @@ Review the implementation plan for Jira issue {{key}} ("{{summary}}") before any
 2. Check that the plan fixes the root cause (not a symptom), covers every caller it affects, keeps front end and back end contracts consistent, and includes a test that would fail without the fix.
 3. Look for security, data-loss and migration risks the plan misses. When the plan changes UI, check it reuses the repository's tokens and components and covers empty, loading and error states (`ui-taste`, System-bound).
 4. When the plan starts with `Kind:` (promote, answer or handoff), there is no code to build: check that the kind fits the issue (it must not dodge a code change the issue asks for; SQL for a person to run, instead of an idempotent script in the repository, dodges one), that each promotion is the right pair of branches, and that the text tells a person everything they must check or do.
+5. Check the plan against the repository rules listed above (instructions, documents, the specialist role that fits): a step that breaks one is a finding that names the rule.
 
 ## Plan B
 
+- A weakness the repository's documents already record as known debt is not a new finding: name it as known, and raise it only when the plan makes it worse.
 - The plan is sound but has small gaps: approve it, and list the gaps as minor findings.
 - You cannot tell whether the plan is right from the code: raise it as a finding phrased as a concrete question.
 - A check that only a running environment can settle (real data, production or staging logs, timings, execution plans, external systems): the author cannot run it here, so do not block on it. Raise it as a minor finding whose body starts with "Manual check:" and says what a person must verify before merging. It goes in the pull request for the human reviewer.

@@ -302,7 +302,7 @@ async function attend(run: Run, key: string, project: Project, work: { pr: Watch
       repos: repos.map(describeRepo).join('\n'),
       work: sections.join('\n\n'),
       language: outputLanguage(),
-      brain: await brainContext(project.name, workspace, sections.join('\n').slice(0, 4000)),
+      brain: await brainContext(project.name, workspace, sections.join('\n').slice(0, 4000), { cwd: workspace, dirs: repos.map((r) => r.work.dir) }),
     };
     // People's review comments are the strongest lesson: what this team expects from a change.
     const said = work.flatMap(({ pr, pending }) =>

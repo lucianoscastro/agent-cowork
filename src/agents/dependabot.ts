@@ -255,7 +255,7 @@ async function handle(run: Run, repo: string, pr: DepPr, gate: Gate, dryRun: boo
         ? `- ${approvers(pr).join(', ')} approved this PR on GitHub, accepting its ${worst} update. Breaking changes in the release notes are expected: report one as a risk only when it affects how this repository uses the package.`
         : '',
       language: outputLanguage(),
-      brain: project ? await brainContext(project.name, undefined, `${pr.title}\n${bumps.map((b) => b.pkg).join(' ')}`) : '',
+      brain: await brainContext(project?.name, undefined, `${pr.title}\n${bumps.map((b) => b.pkg).join(' ')}`, { cwd: work.dir, dirs: [work.dir] }),
     });
     const { output } = await runProvider<Assessment>(cfg.provider, {
       run,

@@ -1,3 +1,5 @@
+import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { brainContext } from '../brain.ts';
 import { outputLanguage, projectOf, projectRepos, read } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
@@ -12,6 +14,42 @@ import { takeForce } from './status.ts';
 const DAY_MS = 86_400_000;
 const BRANCH = 'ai/docs';
 const FOOTER = '\n\n---\n🤖 agentCowork Documenter agent';
+const INDEX = '00-INDEX.md';
+const UNDESCRIBED = '## Not described yet';
+
+/** Every file under a folder, by its path relative to it: regular files only (a link could lead outside the checkout), no dotfiles. */
+async function filesIn(root: string, sub = ''): Promise<string[]> {
+  const out: string[] = [];
+  for (const e of await readdir(join(root, sub), { withFileTypes: true }).catch(() => [])) {
+    if (e.name.startsWith('.')) continue;
+    const path = sub ? `${sub}/${e.name}` : e.name;
+    if (e.isFile()) out.push(path);
+    else if (e.isDirectory()) out.push(...(await filesIn(root, path)));
+  }
+  return out;
+}
+
+/**
+ * The index points to every file in the docs folder, people's own and the specialist roles included: the files it
+ * does not name yet are listed at its end (the next run describes them), and an index the run did not write is
+ * started. Returns the files it listed. Exported for tests.
+ */
+export async function completeIndex(dir: string, folder: string): Promise<string[]> {
+  const root = join(dir, folder);
+  if (!(await lstat(root).then((s) => s.isDirectory(), () => false))) return [];
+  const index = join(root, INDEX);
+  const kind = await lstat(index).then((s) => (s.isFile() ? 'file' : 'other'), () => 'none');
+  if (kind === 'other') return [];
+  const saved = kind === 'file' ? await readFile(index, 'utf8') : '';
+  // The platform's own list from an earlier run names files without describing them: it is replaced, never counted.
+  const text = saved.replace(/\n## Not described yet\n[\s\S]*?(?=\n## |$)/, '').trimEnd();
+  const missing = (await filesIn(root)).filter((f) => f !== INDEX && !text.includes(f)).sort();
+  if (!missing.length && text === saved.trimEnd()) return [];
+  const list = missing.map((f) => `- [\`${f}\`](${encodeURI(f)})`).join('\n');
+  const section = missing.length ? `\n\n${UNDESCRIBED}\n\nFiles in \`${folder}/\` the map above does not name yet, listed by agentCowork so none is missed.\n\n${list}` : '';
+  await writeFile(index, `${text || `# ${folder}`}${section}\n`);
+  return missing;
+}
 
 type Output = { status: 'updated' | 'unchanged'; files: string[]; summary: string };
 const SCHEMA = {
@@ -94,7 +132,7 @@ async function document(run: Run, { repo, base, sha, since }: { repo: string; ba
 
     run.stage('Document');
     const project = projectOf(repo);
-    const brain = project ? await brainContext(project.name, undefined, `${repo} architecture business rules flows decisions conventions`) : '';
+    const brain = await brainContext(project?.name, undefined, `${repo} architecture business rules flows decisions conventions`, { cwd, dirs: [cwd] });
     const prompt = await renderPrompt('documenter/document', { repo, base, sha: sha.slice(0, 12), folder, mode, language: outputLanguage(), brain });
     const { output } = await runProvider<Output>(cfg.provider, { run, label: 'document', prompt, schema: SCHEMA, cwd, mode: 'write', model: cfg.model });
 
@@ -105,6 +143,8 @@ async function document(run: Run, { repo, base, sha, since }: { repo: string; ba
       await sh('git', ['checkout', '--', '.', `:(exclude)${folder}`], { cwd }).catch(() => '');
       await sh('git', ['clean', '-fdq', '--', '.', `:(exclude)${folder}`], { cwd });
     }
+    const unnamed = await completeIndex(cwd, folder);
+    if (unnamed.length) run.event('info', `Listed ${unnamed.length} file(s) the index did not name`, unnamed);
     const docs = changedPaths(await sh('git', ['status', '--porcelain', '-uall', '--', folder], { cwd }));
     if (!docs.length) return { status: 'done', summary: `Documentation already current. ${output.summary}` };
     if (dryRun) return { status: 'done', summary: `would open a docs PR with ${docs.length} file(s): ${output.summary}` };

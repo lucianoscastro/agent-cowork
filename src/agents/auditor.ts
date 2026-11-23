@@ -190,7 +190,7 @@ export async function scan(items: Items, { repo, base, sha, category }: Target, 
       const extra = category === 'dependencies' ? (run.stage('Gather'), await dependencyData(run, work.dir)) : '';
       run.stage('Audit');
       const project = projectOf(repo);
-      const brain = project ? await brainContext(project.name, undefined, `${repo} ${name} ${focus}`) : '';
+      const brain = await brainContext(project?.name, undefined, `${repo} ${name} ${focus}`, { cwd: work.dir, dirs: [work.dir] });
       const prompt = await renderPrompt('auditor/audit', { repo, base, sha: sha.slice(0, 12), language: outputLanguage(), category: name, skill, focus, extra, brain });
       const { output } = await runProvider<Audit>(choice.provider, { run, label: 'audit', prompt, schema: AUDIT_SCHEMA, cwd: work.dir, mode: 'read-only', model: choice.model });
       writeFileSync(join(run.logDir, 'report.md'), renderReport(category, repo, base, sha, output));

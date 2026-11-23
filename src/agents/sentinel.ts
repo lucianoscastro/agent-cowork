@@ -218,6 +218,8 @@ type Context = {
   secrets: Record<string, string>;
   /** The suite's folder in the checkout, or an empty folder without a suite. */
   dir: string;
+  /** The checkout itself, where the repository's rules for agents are. */
+  root: string;
   branch: string;
   sha: string;
   vars: NodeJS.ProcessEnv;
@@ -246,7 +248,7 @@ async function testRepo(run: Run, project: Project, repo: string, target: RepoEn
   run.stage(`Checkout: ${repo}`);
   const sha = await gh(['api', `repos/${repo}/commits/${encodeURIComponent(branch)}`, '-q', '.sha']);
   const work = await checkout(repo, [`+refs/heads/${branch}:refs/remotes/origin/${branch}`], sha);
-  const ctx: Context = { ...base, suite, vars, dir: suite.workdir ? join(work.dir, suite.workdir) : work.dir, branch, sha };
+  const ctx: Context = { ...base, suite, vars, dir: suite.workdir ? join(work.dir, suite.workdir) : work.dir, root: work.dir, branch, sha };
   try {
     run.stage(`Setup: ${repo}`);
     for (const command of suite.setupCommands) {
@@ -356,7 +358,7 @@ async function investigate(ctx: Context, test: TestResult): Promise<string> {
     retries: cfg.retries ? `It failed again in all ${cfg.retries} runs on its own.` : 'It was not run again on its own.',
     secrets: browser.secretNames.join(', ') || '(none)',
     language: outputLanguage(),
-    brain: await brainContext(ctx.project.name, undefined, `${test.title}\n${last.failedStep ?? ''}\n${last.error ?? ''}`.slice(0, 4000)),
+    brain: await brainContext(ctx.project.name, undefined, `${test.title}\n${last.failedStep ?? ''}\n${last.error ?? ''}`.slice(0, 4000), { cwd: ctx.dir, dirs: [ctx.root] }),
   });
   let output: Reproduction;
   try {
@@ -463,7 +465,7 @@ async function exploreRun(run: Run, project: Project, repo: string, target: Repo
   run.stage('Checkout');
   const work = await checkout(repo, [`+refs/heads/${branch}:refs/remotes/origin/${branch}`], head);
   try {
-    const ctx: Context = { run, project, baseUrl: target.baseUrl, name: hostOf(target.baseUrl), secrets, dir: work.dir, branch, sha: head, vars: { ...secrets }, dryRun };
+    const ctx: Context = { run, project, baseUrl: target.baseUrl, name: hostOf(target.baseUrl), secrets, dir: work.dir, root: work.dir, branch, sha: head, vars: { ...secrets }, dryRun };
     return { status: 'done', summary: await explore(ctx, repo, described) };
   } finally {
     await removeCheckout(work).catch(() => {});
@@ -487,7 +489,7 @@ async function explore(ctx: Context, repo: string, changes: string): Promise<str
     minutes: String(cfg.exploreMinutes),
     secrets: browser.secretNames.join(', ') || '(none)',
     language: outputLanguage(),
-    brain: await brainContext(ctx.project.name, undefined, `${repo}\n${changes}`.slice(0, 4000)),
+    brain: await brainContext(ctx.project.name, undefined, `${repo}\n${changes}`.slice(0, 4000), { cwd: ctx.dir, dirs: [ctx.root] }),
   });
   let output: Exploration;
   try {

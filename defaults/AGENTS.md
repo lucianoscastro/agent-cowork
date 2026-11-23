@@ -10,6 +10,9 @@ These are the defaults shipped with agentCowork. A repository's own `CLAUDE.md` 
 - Code, commits and PR titles are in English. Summaries and questions use the language the run's prompt asks for.
 - Be concise: bullets and short tables. Never paste raw logs, headers or secrets into summaries.
 - Follow the run's output contract exactly (for example, a JSON schema).
+- **Decide or ask.** Decide yourself, with one recommendation and the cost of the alternative, when the choice is technical, reversible and inside the repository's documented patterns. Ask when it changes what users or customers see, breaks a public contract or older clients still in use, needs production data or credentials, or accepts more security debt; ask too when a document and the code disagree and the right behavior is unclear.
+- **Say what you did not verify.** Re-check a claim (a document, a brain note, a subagent's or a reviewer's report) against the code before relying on it, and list plainly what you could not confirm instead of presenting a guess as fact.
+- **Leave other changes alone.** The checkout may hold changes you did not make (a subagent working in parallel, an earlier step, a person): never revert or overwrite them.
 
 ## 2. Subagents
 

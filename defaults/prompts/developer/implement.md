@@ -41,9 +41,9 @@ Resolve Jira issue {{key}} of the project "{{project}}": "{{summary}}". Fix the 
 
 ## Operations
 
-1. In each repository you change, read its agent instructions (`CLAUDE.md`, `AGENTS.md`) and README, and follow their conventions.
+1. In each repository you change, read its agent instructions (`CLAUDE.md`, `AGENTS.md`), README and the documents its Repository rules list for the parts you change, and follow their conventions and the specialist role that fits each step.
 2. Follow the approved plan. Re-read the code it touches before changing it.
-   - When your runtime offers the `coder` and `tester` subagents, delegate only truly independent steps to them (for example, tests in one repository while you change another), and re-verify what they report.
+   - When your runtime offers the `coder` and `tester` subagents, delegate only truly independent steps to them (for example, tests in one repository while you change another), and re-verify what they report. They do not see this prompt: give each its step, its files, and the repository's documents and specialist role that apply.
 3. For a bug, follow `systematic-debugging`: reproduce it first with a test that fails, then fix the root cause in the shared code (search every caller), not the symptom.
 4. For a feature, build the smallest change that fully delivers it. When front end and back end both change, keep the contract between them consistent.
 5. Add or update tests for the change. Use your skills where they apply (`code-rules`, `tdd-workflow`, `backend-patterns`, `frontend-patterns`).
