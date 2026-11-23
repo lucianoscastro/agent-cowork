@@ -63,7 +63,6 @@ export type Run = {
   /** All tokens of the run's model calls (fresh input, cache and output). */
   tokens?: number;
   /** Claude's estimate at API prices; 0 when no runtime reported one. */
-  cost?: number;
 };
 export type RunDetail = Run & { events: { at: string; kind: string; message: string; data: unknown }[] };
 

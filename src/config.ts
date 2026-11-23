@@ -100,7 +100,7 @@ export type Settings = {
   // The card's way through the board, the same for every agent that takes cards (a transition or status name; empty
   // leaves it): taken, waiting for people's answers, waiting for their approval of a finished proposal (empty: as
   // waiting for people), and handed to another agent, back where its JQL finds it. assign: a card an agent takes is
-  // assigned to this account. worklog: each live run on a card logs its time there (Jira work log), with its runtimes, tokens and cost.
+  // assigned to this account. worklog: each live run on a card logs its time there (Jira work log), with its runtimes and tokens.
   jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; reviewTransition: string; readyTransition: string; assign: boolean; worklog: boolean };
   // What the webhook (a secret) is told about, and the UI's address for links in the messages (optional).
   notifications: { uiUrl: string; events: Record<NotifyEvent, boolean> };

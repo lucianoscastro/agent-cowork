@@ -268,8 +268,6 @@ export function duration(start: string, end: string | null): string {
 /** 1234 -> 1.2k, 3456789 -> 3.5M. */
 export const formatTokens = (n: number | undefined) =>
   !n ? '—' : n < 1000 ? String(n) : n < 1_000_000 ? `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k` : `${(n / 1_000_000).toFixed(1)}M`;
-/** Estimated cost; a dash when no runtime reported one. */
-export const formatCost = (usd: number | undefined) => (!usd ? '—' : usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`);
 
 export const AGENT_NAMES = { approver: 'Approver', dependabot: 'Dependabot', pm: 'Product Manager', developer: 'Developer', auditor: 'Auditor', sentinel: 'Sentinel', documenter: 'Documenter' } as const;
 /** One line per agent: what it does, for cards and headers. */

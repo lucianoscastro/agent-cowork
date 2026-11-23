@@ -124,7 +124,7 @@ export function Integrations() {
         <Toggle
           checked={jira.worklog}
           onChange={(worklog) => setJira({ ...jira, worklog })}
-          label="Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run"
+          label="Log each agent run on its card as Jira work log: how long it took, the time and tokens of each model, and a link to the run"
         />
         <p className="hint">
           {t("It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.")}

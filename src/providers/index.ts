@@ -37,9 +37,9 @@ export type ProviderRequest = {
 
 /**
  * Tokens of one call, comparable across runtimes: `inputTokens` are fresh input (cache reads excluded),
- * cache reads and writes are apart. Only Claude reports a cost, its estimate at API prices.
+ * cache reads and writes are apart.
  */
-export type Usage = { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; costUsd?: number };
+export type Usage = { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number };
 /** provider: the runtime that answered, after any fallback. */
 export type ProviderResult<T> = { output: T; usage: Usage; provider?: ProviderId };
 

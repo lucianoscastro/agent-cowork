@@ -1,9 +1,9 @@
 import { type AccountInfo, type AgentId } from '../api';
 import { api } from '../api';
 import { type T, useLocale, useT } from '../i18n';
-import { AGENT_NAMES, Badge, Button, Card, Empty, formatCost, formatTokens, Loading, Message, PageHeader, PROVIDER_NAMES, Time, useAction, useFetch } from '../ui';
+import { AGENT_NAMES, Badge, Button, Card, Empty, formatTokens, Loading, Message, PageHeader, PROVIDER_NAMES, Time, useAction, useFetch } from '../ui';
 
-type Row = { calls: number; runs: number; input: number; cache: number; output: number; cost: number };
+type Row = { calls: number; runs: number; input: number; cache: number; output: number };
 type Summary = {
   totals: { today: Row; week: Row; month: Row };
   byAgent: (Row & { agent: AgentId })[];
@@ -131,9 +131,7 @@ function Tile({ label, row }: { label: string; row: Row }) {
       <p className="tile-label">{t(label)}</p>
       <p className="tile-value">{formatTokens(tokens(row))}</p>
       <p className="tile-sub">
-        {row.runs === 1
-          ? t('tokens in 1 run, {cost} estimated', { cost: formatCost(row.cost) })
-          : t('tokens in {n} runs, {cost} estimated', { cost: formatCost(row.cost), n: row.runs })}
+        {row.runs === 1 ? t('tokens in 1 run') : t('tokens in {n} runs', { n: row.runs })}
       </p>
     </section>
   );
@@ -153,7 +151,6 @@ function Table<T extends Row>({ rows, first, name }: { rows: T[]; first: string;
           <th className="num">{t('Cache')}</th>
           <th className="num">{t('Output')}</th>
           <th className="num">{t('Total')}</th>
-          <th className="num">{t('Est. cost')}</th>
         </tr>
       </thead>
       <tbody>
@@ -168,7 +165,6 @@ function Table<T extends Row>({ rows, first, name }: { rows: T[]; first: string;
             <td className="num">
               <b>{formatTokens(tokens(r))}</b>
             </td>
-            <td className="num">{formatCost(r.cost)}</td>
           </tr>
         ))}
       </tbody>
@@ -186,8 +182,7 @@ export function Usage() {
       <PageHeader title="Usage" />
       <p className="muted">
         {t("Tokens of every model call, from the runs' records.")} <b>{t('Input')}</b> {t('is fresh input,')} <b>{t('Cache')}</b>{' '}
-        {t("is input read from or written to the provider's cache (usually much cheaper),")} <b>{t('Output')}</b> {t('is what the model wrote.')}{' '}
-        {t("The cost is Claude's own estimate at API prices: on a subscription (Team, Enterprise) the bill is the subscription, and Codex and agy report no cost.")}
+        {t("is input read from or written to the provider's cache (usually much cheaper),")} <b>{t('Output')}</b> {t('is what the model wrote.')}
       </p>
       <LimitsCard limits={data.limits} accounts={data.accounts} onChange={reload} />
       <div className="tiles">

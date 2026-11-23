@@ -117,19 +117,19 @@ const span = (ms: number) => {
 };
 
 /**
- * A run's work log on its card, one line each: the run with its tokens and cost, then every model it called with that
- * model's time, tokens and cost; and a link to the run. Exported for tests.
+ * A run's work log on its card, one line each: the run with its tokens, then every model it called with that model's
+ * time and tokens; and a link to the run. Exported for tests.
  */
 export function worklog(id: number, agent: AgentId, started: string, ended: string, status: RunStatus): { seconds: number; text: string; link?: string } {
   const models = runModels(id);
-  const use = (tokens: number, cost: number) => [tokens > 0 && `${count(tokens)} tokens`, cost > 0 && `US$${cost.toFixed(2)}`];
+  const tokens = (n: number) => n > 0 && `${count(n)} tokens`;
   const run = [
     `agentCowork · ${AGENT_NAMES[agent] ?? agent} · run #${id} (${status})`,
-    ...use(models.reduce((s, m) => s + m.tokens, 0), models.reduce((s, m) => s + m.cost, 0)),
+    tokens(models.reduce((s, m) => s + m.tokens, 0)),
   ];
   const lines = models.map((m) => {
     const name = [m.provider ?? 'unknown', m.model !== 'default' && m.model].filter(Boolean).join(' ');
-    const detail = [m.ms !== null && span(m.ms), ...use(m.tokens, m.cost)].filter(Boolean);
+    const detail = [m.ms !== null && span(m.ms), tokens(m.tokens)].filter(Boolean);
     return detail.length ? `${name}: ${detail.join(' · ')}` : name;
   });
   const { uiUrl } = read('notifications');

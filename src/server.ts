@@ -425,13 +425,13 @@ route('GET', '/api/runs', ({ url }) => {
     offset: Number(url.searchParams.get('offset')) || 0,
   });
   const usage = runsUsage(runs.map((r) => r.id));
-  return runs.map((r) => ({ ...r, tokens: usage.get(r.id)?.tokens ?? 0, cost: usage.get(r.id)?.cost ?? 0 }));
+  return runs.map((r) => ({ ...r, tokens: usage.get(r.id) ?? 0 }));
 });
 route('GET', '/api/runs/:id', (_c, [id]) => {
   const found = getRun(Number(id));
   if (!found) throw new HttpError(404, 'Run not found');
   const usage = runsUsage([found.id]).get(found.id);
-  return { ...found, tokens: usage?.tokens ?? 0, cost: usage?.cost ?? 0 };
+  return { ...found, tokens: usage ?? 0 };
 });
 route('GET', '/api/usage', () => ({
   ...usageSummary(),

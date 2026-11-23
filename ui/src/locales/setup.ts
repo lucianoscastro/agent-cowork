@@ -12,8 +12,8 @@ const translations = {
     'Assign the card to this Jira account when an agent takes it': 'Atribuir o card a esta conta do Jira quando um agente pega',
     'So the board shows who is on it. The account needs the Assign issues and Assignable user permissions (Check on Jira, in Projects).':
       'Assim o board mostra quem está nele. A conta precisa das permissões Assign issues e Assignable user (Verificar no Jira, em Projetos).',
-    'Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run':
-      'Registrar cada run de agente no card como work log do Jira: quanto tempo levou, os runtimes, tokens e custo, e um link para a run',
+    'Log each agent run on its card as Jira work log: how long it took, the time and tokens of each model, and a link to the run':
+      'Registrar cada run de agente no card como work log do Jira: quanto tempo levou, o tempo e os tokens de cada modelo, e um link para a run',
     "It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.":
       'Conta nos relatórios de horas do Jira (e no Tempo) como o tempo das pessoas; a estimativa não muda e ninguém é notificado. Exige o time tracking ligado no Jira.',
     'How a card moves on the board, the same for every agent (a transition or status name; empty leaves it where it is):':
@@ -230,8 +230,8 @@ const translations = {
     'Assign the card to this Jira account when an agent takes it': 'Asignar la tarjeta a esta cuenta de Jira cuando un agente la toma',
     'So the board shows who is on it. The account needs the Assign issues and Assignable user permissions (Check on Jira, in Projects).':
       'Así el tablero muestra quién está en ella. La cuenta necesita los permisos Assign issues y Assignable user (Comprobar en Jira, en Proyectos).',
-    'Log each agent run on its card as Jira work log: how long it took, the runtimes, tokens and cost, and a link to the run':
-      'Registrar cada ejecución de agente en su tarjeta como registro de trabajo de Jira: cuánto tardó, los runtimes, tokens y costo, y un enlace a la ejecución',
+    'Log each agent run on its card as Jira work log: how long it took, the time and tokens of each model, and a link to the run':
+      'Registrar cada ejecución de agente en su tarjeta como registro de trabajo de Jira: cuánto tardó, el tiempo y los tokens de cada modelo, y un enlace a la ejecución',
     "It counts in Jira's time reports (and Tempo) like people's time; the estimate stays as it is and nobody is notified. Needs time tracking on in Jira.":
       'Cuenta en los informes de horas de Jira (y en Tempo) como el tiempo de las personas; la estimación no cambia y no se notifica a nadie. Requiere el control de tiempo activado en Jira.',
     'How a card moves on the board, the same for every agent (a transition or status name; empty leaves it where it is):':

@@ -74,7 +74,7 @@ export async function runClaude<T>(req: ProviderRequest): Promise<ProviderResult
   const limits = claudeLimits(events);
   if (limits) recordLimits('claude', limits);
   const result = mainResult(events) as
-    | { is_error?: boolean; result?: string; structured_output?: T; total_cost_usd?: number; usage?: Record<string, number> }
+    | { is_error?: boolean; result?: string; structured_output?: T; usage?: Record<string, number> }
     | undefined;
   if (!result) throw new Error(`claude exited ${out.code} without a result: ${out.stderr.slice(-500)}`);
   if (result.is_error || result.structured_output === undefined) {
@@ -87,7 +87,6 @@ export async function runClaude<T>(req: ProviderRequest): Promise<ProviderResult
       outputTokens: result.usage?.output_tokens,
       cacheReadTokens: result.usage?.cache_read_input_tokens,
       cacheWriteTokens: result.usage?.cache_creation_input_tokens,
-      costUsd: result.total_cost_usd,
     },
   };
 }

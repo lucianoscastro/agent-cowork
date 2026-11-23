@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type AgentId, api, type Run, type RunDetail } from '../api';
 import { useLocale, useT } from '../i18n';
-import { AGENT_NAMES, Badge, Button, Card, duration, Empty, Field, formatCost, formatTokens, Loading, Message, PAGE_SIZE, PageHeader, Pager, RunStatus, Select, Time, type Tone, useAction, useFetch } from '../ui';
+import { AGENT_NAMES, Badge, Button, Card, duration, Empty, Field, formatTokens, Loading, Message, PAGE_SIZE, PageHeader, Pager, RunStatus, Select, Time, type Tone, useAction, useFetch } from '../ui';
 
 export function Runs() {
   const t = useT();
@@ -90,7 +90,6 @@ export function Runs() {
                 <th>{t('Started')}</th>
                 <th>{t('Took')}</th>
                 <th className="num">{t('Tokens')}</th>
-                <th className="num">{t('Est. cost')}</th>
               </tr>
             </thead>
             <tbody>
@@ -113,7 +112,6 @@ export function Runs() {
                   </td>
                   <td>{duration(r.started_at, r.ended_at)}</td>
                   <td className="num">{formatTokens(r.tokens)}</td>
-                  <td className="num">{formatCost(r.cost)}</td>
                 </tr>
               ))}
             </tbody>
@@ -210,7 +208,7 @@ export function RunDetailPage({ id }: { id: number }) {
             <Time iso={data.started_at} /> · {duration(data.started_at, data.ended_at)}
           </dd>
           <dt>{t('Usage')}</dt>
-          <dd>{t('{tokens} tokens, {cost} estimated', { tokens: formatTokens(data.tokens), cost: formatCost(data.cost) })}</dd>
+          <dd>{t('{tokens} tokens', { tokens: formatTokens(data.tokens) })}</dd>
           {data.summary && data.summary !== data.error && (
             <>
               <dt>{t('Result')}</dt>

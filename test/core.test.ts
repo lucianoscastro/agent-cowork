@@ -489,9 +489,8 @@ test('usage: model calls are summed per run, agent, model and day', async () => 
   await withRun({ agent: 'approver', item: 'usage-test', dryRun: true }, async (run) => {
     run.event('usage', 'review: usage', { inputTokens: 1000, cacheReadTokens: 500, cacheWriteTokens: 100, outputTokens: 200, costUsd: 0.25, provider: 'claude', model: 'opus' });
     run.event('usage', 'review: usage', { inputTokens: 300, outputTokens: 50, provider: 'codex', model: 'default' });
-    const usage = runsUsage([run.id]).get(run.id);
-    assert.equal(usage?.tokens, 2150);
-    assert.equal(usage?.cost, 0.25);
+    // A cost an older Claude call recorded is not shown anywhere: tokens only.
+    assert.equal(runsUsage([run.id]).get(run.id), 2150);
     return { status: 'done' };
   });
   const summary = usageSummary();
@@ -499,9 +498,10 @@ test('usage: model calls are summed per run, agent, model and day', async () => 
   assert.ok(summary.byModel.some((m) => m.provider === 'claude' && m.model === 'opus' && m.cache >= 600));
   assert.ok(summary.byAgent.some((a) => a.agent === 'approver' && a.calls >= 2));
   assert.equal(summary.byDay[0].day, new Date().toISOString().slice(0, 10));
+  assert.ok(!('cost' in summary.byModel[0]) && !('cost' in summary.totals.today));
 });
 
-test('worklog: a run on a card logs its time, tokens and cost, each model with its own, and a link to it', async () => {
+test('worklog: a run on a card logs its time and tokens, each model with its own, and a link to it; never a cost', async () => {
   let id = 0;
   // A dry run never writes to Jira: only what its entry would say is checked here.
   await withRun({ agent: 'pm', item: 'WL-1', dryRun: true, card: 'WL-1' }, async (run) => {
@@ -520,7 +520,7 @@ test('worklog: a run on a card logs its time, tokens and cost, each model with i
   assert.equal(w.seconds, 1410);
   assert.equal(
     w.text,
-    [`agentCowork · Product Manager · run #${id} (waiting) · 1.2M tokens · US$0.84`, 'codex gpt-x: 13m · 1.2M tokens · US$0.84', 'claude: 20s · 100 tokens', 'agy: 50 tokens'].join('\n'),
+    [`agentCowork · Product Manager · run #${id} (waiting) · 1.2M tokens`, 'codex gpt-x: 13m · 1.2M tokens', 'claude: 20s · 100 tokens', 'agy: 50 tokens'].join('\n'),
   );
   assert.equal(w.link, `https://cowork.example/#/runs/${id}`);
   // No model call and no UI address: the time alone, without a link.

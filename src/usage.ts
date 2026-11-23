@@ -1,7 +1,7 @@
 import { sql } from './db.ts';
 
 /**
- * Token use and estimated cost, summed from the `usage` events every model call records. Nothing is stored
+ * Token use, summed from the `usage` events every model call records. Nothing is stored
  * twice, so runs from before this page existed count too (without provider, model or cache detail).
  */
 const n = (field: string) => `COALESCE(SUM(json_extract(e.data, '$.${field}')), 0)`;
@@ -10,18 +10,17 @@ const COLUMNS = `
   COUNT(DISTINCT e.run_id) AS runs,
   ${n('inputTokens')} AS input,
   ${n('cacheReadTokens')} + ${n('cacheWriteTokens')} AS cache,
-  ${n('outputTokens')} AS output,
-  ${n('costUsd')} AS cost`;
+  ${n('outputTokens')} AS output`;
 
 const TOKENS = `${n('inputTokens')} + ${n('cacheReadTokens')} + ${n('cacheWriteTokens')} + ${n('outputTokens')}`;
 
-export type UsageRow = { calls: number; runs: number; input: number; cache: number; output: number; cost: number };
+export type UsageRow = { calls: number; runs: number; input: number; cache: number; output: number };
 
 const since = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
 
 function rows<T>(group: string, select: string, days: number): (T & UsageRow)[] {
   return sql()
-    .prepare(`SELECT ${select}, ${COLUMNS} FROM run_events e JOIN runs r ON r.id = e.run_id WHERE e.kind = 'usage' AND e.at >= ? GROUP BY ${group} ORDER BY cost DESC, input DESC`)
+    .prepare(`SELECT ${select}, ${COLUMNS} FROM run_events e JOIN runs r ON r.id = e.run_id WHERE e.kind = 'usage' AND e.at >= ? GROUP BY ${group} ORDER BY input + cache + output DESC`)
     .all(since(days)) as (T & UsageRow)[];
 }
 
@@ -45,24 +44,24 @@ export function usageSummary() {
 }
 
 /** Per-run totals for the runs list, keyed by run id. */
-export function runsUsage(ids: number[]): Map<number, { tokens: number; cost: number }> {
+export function runsUsage(ids: number[]): Map<number, number> {
   if (!ids.length) return new Map();
   const found = sql()
     .prepare(
-      `SELECT e.run_id AS id, ${TOKENS} AS tokens, ${n('costUsd')} AS cost
+      `SELECT e.run_id AS id, ${TOKENS} AS tokens
        FROM run_events e WHERE e.kind = 'usage' AND e.run_id IN (${ids.map(() => '?').join(',')}) GROUP BY e.run_id`,
     )
-    .all(...ids) as { id: number; tokens: number; cost: number }[];
-  return new Map(found.map((r) => [r.id, { tokens: r.tokens, cost: r.cost }]));
+    .all(...ids) as { id: number; tokens: number }[];
+  return new Map(found.map((r) => [r.id, r.tokens]));
 }
 
-export type ModelUse = { provider: string | null; model: string | null; tokens: number; cost: number; ms: number | null };
+export type ModelUse = { provider: string | null; model: string | null; tokens: number; ms: number | null };
 
 /** One run's use per model, in the order first called; ms is null when no call recorded its time (calls before it was). */
 export function runModels(id: number): ModelUse[] {
   return sql()
     .prepare(
-      `SELECT json_extract(e.data, '$.provider') AS provider, json_extract(e.data, '$.model') AS model, ${TOKENS} AS tokens, ${n('costUsd')} AS cost,
+      `SELECT json_extract(e.data, '$.provider') AS provider, json_extract(e.data, '$.model') AS model, ${TOKENS} AS tokens,
        SUM(json_extract(e.data, '$.durationMs')) AS ms
        FROM run_events e WHERE e.kind = 'usage' AND e.run_id = ? GROUP BY provider, model ORDER BY MIN(e.id)`,
     )
