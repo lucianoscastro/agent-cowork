@@ -1,6 +1,6 @@
 # Runtime base: Debian trixie with Node (glibc like the Ubuntu CI runners; Debian security ships Chromium
 # fixes promptly and Playwright supports it). Pinned by digest; the build also applies pending security
-# updates (the first build of each day, see SECURITY_UPDATES), and the daily CVE scan
+# updates (again whenever Debian publishes some, see SECURITY_UPDATES), and the daily CVE scan
 # (.github/workflows/cve.yml) says when a rebuild is due.
 ARG RUNTIME_IMAGE=node:26-trixie-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072
 
@@ -59,8 +59,8 @@ FROM ${RUNTIME_IMAGE}
 # The .NET SDK majors installed, space-separated. A project's tests need its own major's runtime, which a newer
 # SDK doesn't bring: list an older major too while a project still targets it (Node's major is the base image tag).
 ARG DOTNET_PACKAGES=dotnet-sdk-11.0
-# The day of the build (CI passes it): a new day re-runs the upgrade below instead of reusing a cached layer
-# that would keep a package Debian has since fixed.
+# When Debian last published updates (CI passes the dates of its indexes): a new publication re-runs the upgrade
+# below instead of reusing a cached layer that would keep a package Debian has since fixed.
 ARG SECURITY_UPDATES=
 # .NET and gh come from their vendors' apt repositories (signing keys fetched in the tools stage).
 COPY --from=tools /opt/apt-keys/ /etc/apt/keyrings/
