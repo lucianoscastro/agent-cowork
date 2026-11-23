@@ -365,6 +365,14 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       return { status: 'done', summary: `${dryRun ? 'would promote' : 'promoted'}: ${urls.join(', ') || 'already in sync'}` };
     }
 
+    // The plan goes on the card for people, in place of the one before: what is being built, and why.
+    if (!dryRun) {
+      const doc = `# Plan for ${key}: ${issue.fields.summary}\n\n> agentCowork Developer, run #${run.id}, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Replaced by each new plan; the pull requests show what was built.\n\n${plan.plan}\n`;
+      await jira
+        .replaceAttachment(key, { name: jira.PLAN_DOC, type: 'text/markdown', data: Buffer.from(doc) })
+        .catch((err) => run.event('warn', 'The plan was not attached to the card', (err as Error).message));
+    }
+
     // --- Build ---
     run.stage('Build');
     const subagents =

@@ -93,7 +93,7 @@ export async function relabel(key: string, remove: string[], add: string[]): Pro
 /** The cards an agent takes: its own label, within the JQL every agent shares (`jira.readyJql`, e.g. a status). */
 export const cardJql = (label: string) => `labels = "${label}" AND (${read('jira').readyJql})`;
 
-type Attachment = { filename: string; created: string; size: number; content: string };
+type Attachment = { id: string; filename: string; created: string; size: number; content: string };
 /** A name safe to save under a folder: a Markdown file name, no path. Exported for tests. */
 export const markdownName = (name: string) => /^[\w][\w .()-]{0,120}\.md$/i.test(name) && !name.includes('..');
 /**
@@ -101,6 +101,8 @@ export const markdownName = (name: string) => /^[\w][\w .()-]{0,120}\.md$/i.test
  * them on the card. Each version is attached as a whole set, so a version drops one by leaving it out.
  */
 export const SPEC_DOC = /^(spec|design|tasks|discovery)\.md$|^ADR-\d{2}-[\w-]{1,80}\.md$|^mockup-[\w-]{1,80}\.html$/;
+/** The Developer's plan, attached for people and replaced by each new one; runs never read it back, they plan afresh. */
+export const PLAN_DOC = 'developer-plan.md';
 /** A discovery's documents: what it proposes and the prototypes of its screens. */
 export const DISCOVERY_DOC = /^discovery\.md$|^mockup-[\w-]{1,80}\.html$/;
 
@@ -110,7 +112,9 @@ export const DISCOVERY_DOC = /^discovery\.md$|^mockup-[\w-]{1,80}\.html$/;
  * ponytail: a version is one upload, seconds apart; a minute of slack.
  */
 export function currentDocs<T extends Pick<Attachment, 'filename' | 'created'>>(attachments: T[]): T[] {
-  const sorted = attachments.filter((a) => markdownName(a.filename) || SPEC_DOC.test(a.filename)).sort((x, y) => Date.parse(x.created) - Date.parse(y.created));
+  const sorted = attachments
+    .filter((a) => a.filename !== PLAN_DOC && (markdownName(a.filename) || SPEC_DOC.test(a.filename)))
+    .sort((x, y) => Date.parse(x.created) - Date.parse(y.created));
   const spec = sorted.findLast((a) => a.filename === 'spec.md' || a.filename === 'discovery.md');
   const since = spec ? Date.parse(spec.created) - 60_000 : 0;
   const latest = new Map<string, T>();
@@ -294,6 +298,13 @@ export async function attach(key: string, files: { name: string; type: string; d
     body: form,
   });
   if (!res.ok) throw new Error(`Jira attach ${key}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+}
+
+/** Attaches a file in place of its earlier copies: the new one first, then the older ones go, so the card always has one. */
+export async function replaceAttachment(key: string, file: { name: string; type: string; data: Buffer }): Promise<void> {
+  const { fields } = await api<{ fields: { attachment?: Attachment[] } }>(`api/3/issue/${key}?fields=attachment`);
+  await attach(key, [file]);
+  for (const old of (fields.attachment ?? []).filter((a) => a.filename === file.name)) await api(`api/3/attachment/${old.id}`, { method: 'DELETE' });
 }
 
 /** Connection test for the UI: who the credentials act as, and the name of each project's board. */

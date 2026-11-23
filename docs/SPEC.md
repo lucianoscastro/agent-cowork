@@ -103,7 +103,7 @@ Turns Jira cards into verified draft pull requests.
 | **Lead** | Claude Code. It plans, splits work and owns the card. |
 | **Subagents** | Roles with their own model: `coder`, `tester`, `verifier`. They are grouped by shared code context, not by business area, and used only for truly parallel work. |
 | **Reviewers** | Up to two independent reviewers, each switchable and with its own runtime and model (first on with Codex, second off by default), read-only. They audit the plan and the final diff in parallel; the review passes only when each one passes, and the lead gets every finding (the second reviewer's marked). With none on, plans and diffs go unreviewed and only the must-pass commands and the people on the PR check the work. |
-| **Output** | One draft PR per changed repository, a Jira comment (Plan / Result / How to test) and a status transition. |
+| **Output** | One draft PR per changed repository, a Jira comment (Plan / Result / How to test) and a status transition. The reviewed plan goes on the card as `developer-plan.md` before anything is built, in place of the one before (attached first, then the older copy removed), so people see what is being built and why; runs never read it back. |
 | **Never** | Merge, deploy, write to databases, or change CI configuration. |
 
 Lifecycle (run by the platform):

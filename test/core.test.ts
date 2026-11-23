@@ -1236,6 +1236,7 @@ test('product manager: settings, attachments, the documents it saves, the brief 
   // A new version drops tasks.md by leaving it out: only the set attached with the newest spec.md counts.
   const at = (filename: string, created: string) => ({ filename, created });
   const docs = currentDocs([
+    at('developer-plan.md', '2026-11-03T10:00:00.000+0000'),
     at('spec.md', '2026-11-01T10:00:00.000+0000'),
     at('tasks.md', '2026-11-01T10:00:01.000+0000'),
     at('notes.md', '2026-11-01T09:00:00.000+0000'),
@@ -1246,6 +1247,7 @@ test('product manager: settings, attachments, the documents it saves, the brief 
     at('mockup-orders-export.html', '2026-11-05T10:00:02.000+0000'),
     at('page.html', '2026-11-05T10:00:02.000+0000'),
   ]);
+  assert.ok(!docs.some((d) => d.filename === 'developer-plan.md'), 'the plan on the card is for people, not read back');
   // A prototype belongs to its version like the documents; any other HTML is never read.
   assert.deepEqual(docs.map((d) => `${d.filename} ${d.created.slice(5, 10)}`), ['spec.md 11-05', 'ADR-01-csv.md 11-05', 'mockup-orders-export.html 11-05', 'notes.md 11-01']);
 
