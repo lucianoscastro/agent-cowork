@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readAgentFile } from '../isolation.ts';
 import { createHash } from 'node:crypto';
 import type { Project } from '../config.ts';
 import { gh, ghJson } from '../integrations/github.ts';
@@ -242,7 +242,8 @@ type PwSuite = { title?: string; file?: string; specs?: PwSpec[]; suites?: PwSui
 
 export function parsePlaywrightJson(report: unknown, readFile: (path: string) => Buffer | undefined = (p) => {
   try {
-    return readFileSync(p);
+    // The report names the file: read as the agents' user, which ran the suite, never as the platform.
+    return readAgentFile(p);
   } catch {
     return undefined;
   }

@@ -1,12 +1,10 @@
-import { mkdtemp, rm, symlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { asset } from '../assets.ts';
 import { SECRETS } from '../config.ts';
 import { TOOLS_TOKEN_ENV } from '../databases.ts';
 import { getSecret } from '../db.ts';
 import { env } from '../env.ts';
-import { safeEnv } from '../sh.ts';
 import type { ProviderRequest, ProviderResult } from './index.ts';
 import { authMethod } from './index.ts';
 import { claudeLimits, recordLimits } from './limits.ts';
@@ -49,12 +47,13 @@ function mcpConfig(req: ProviderRequest): string[] {
 }
 
 /**
- * A fresh Claude Code config directory for one call, holding only the platform's instructions and skills: settings,
- * hooks, plugins or agents that an earlier call wrote never load (`--setting-sources user` reads this directory).
- * Exported for tests.
+ * A fresh Claude Code config directory in the call's folder, holding only the platform's instructions and skills:
+ * settings, hooks, plugins or agents that an earlier call wrote never load (`--setting-sources user` reads this
+ * directory). Exported for tests.
  */
-export async function claudeConfigDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'agentcowork-claude-'));
+export async function claudeConfigDir(home: string): Promise<string> {
+  const dir = join(home, '.claude');
+  await mkdir(dir);
   await symlink(asset('AGENTS.md').path, join(dir, 'CLAUDE.md'));
   await symlink(asset('skills').path, join(dir, 'skills'));
   return dir;
@@ -79,14 +78,20 @@ export async function runClaude<T>(req: ProviderRequest): Promise<ProviderResult
     '--disallowedTools', ...NO_READ(), 'Bash(git * --output*)', 'Bash(git * --no-index*)', 'Bash(git diff --no-index:*)',
     ...(req.mode === 'write' ? [] : ['--append-system-prompt', READ_ONLY_HINT]),
   ];
-  const config = await claudeConfigDir();
   const out = await spawnStream('claude', args, {
     cwd: req.cwd,
-    env: safeEnv({ ...credentials(), CLAUDE_CONFIG_DIR: config, ...(req.tools ? { [TOOLS_TOKEN_ENV]: req.tools.token } : {}) }),
+    // Nonessential traffic (telemetry, error reports, updates) would only meet hosts the network proxy refuses.
+    env: {
+      ...credentials(),
+      CLAUDE_CONFIG_DIR: await claudeConfigDir(req.home!),
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      ...(req.tools ? { [TOOLS_TOKEN_ENV]: req.tools.token } : {}),
+    },
+    home: req.home!,
     input: req.prompt,
     signal: req.run.signal,
     transcript: req.run.transcript(req.label),
-  }).finally(() => rm(config, { recursive: true, force: true }));
+  });
   const events = jsonLines(out.stdout);
   const limits = claudeLimits(events);
   if (limits) recordLimits('claude', limits);

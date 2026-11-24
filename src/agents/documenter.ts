@@ -1,9 +1,10 @@
-import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { brainContext } from '../brain.ts';
 import { outputLanguage, projectOf, projectRepos, read } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { gh } from '../integrations/github.ts';
+import { NO_FOLLOW, readAgentFile } from '../isolation.ts';
 import { notify } from '../notify.ts';
 import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
@@ -41,14 +42,14 @@ export async function completeIndex(dir: string, folder: string): Promise<string
   const index = join(root, INDEX);
   const kind = await lstat(index).then((s) => (s.isFile() ? 'file' : 'other'), () => 'none');
   if (kind === 'other') return [];
-  const saved = kind === 'file' ? await readFile(index, 'utf8') : '';
+  const saved = kind === 'file' ? readAgentFile(index).toString('utf8') : '';
   // The platform's own list from an earlier run names files without describing them: it is replaced, never counted.
   const text = saved.replace(/\n## Not described yet\n[\s\S]*?(?=\n## |$)/, '').trimEnd();
   const missing = (await filesIn(root)).filter((f) => f !== INDEX && !text.includes(f)).sort();
   if (!missing.length && text === saved.trimEnd()) return [];
   const list = missing.map((f) => `- [\`${f}\`](${encodeURI(f)})`).join('\n');
   const section = missing.length ? `\n\n${UNDESCRIBED}\n\nFiles in \`${folder}/\` the map above does not name yet, listed by agentCowork so none is missed.\n\n${list}` : '';
-  await writeFile(index, `${text || `# ${folder}`}${section}\n`);
+  await writeFile(index, `${text || `# ${folder}`}${section}\n`, { flag: NO_FOLLOW });
   return missing;
 }
 

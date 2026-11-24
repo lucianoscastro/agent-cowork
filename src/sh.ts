@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -41,6 +41,8 @@ export const GIT_HARDENING = [
   '-c', 'credential.helper=!gh auth git-credential',
   '-c', 'protocol.ext.allow=never',
   '-c', 'commit.gpgSign=false',
+  // A repository an agent nests in a checkout is never asked for its state: git would run it with its own config.
+  '-c', 'diff.ignoreSubmodules=all',
 ];
 const GIT_NETWORK = new Set(['clone', 'fetch', 'push', 'ls-remote']);
 /** What gh and network git need from this process's environment besides safeEnv(): a proxy and its certificates. */
@@ -54,15 +56,41 @@ export const setGithubToken = (token: string | undefined) => void (githubToken =
  * get the token, git ignores the global config (on the agents' writable HOME) and the hardening above. A caller's own
  * environment is kept. Exported for tests.
  */
-// ponytail: agents run as the platform's own Linux user, so filters, textconv and merge drivers an agent writes into a
-// checkout's config still run on local git commands (without the token). Running agents as another user ends that.
-export function platformCommand(cmd: string, args: string[], env?: NodeJS.ProcessEnv): { args: string[]; env?: NodeJS.ProcessEnv } {
+// Agents run as their own user (isolation.ts): they cannot write a repository cache's config, and git refuses a
+// checkout whose .git they replaced (not the platform's), so filters, textconv and merge drivers stay the platform's.
+// ponytail: without that user (an old compose), an agent's filters still run on local git commands, without the token.
+export function platformCommand(cmd: string, args: string[], env?: NodeJS.ProcessEnv, cwd?: string): { args: string[]; env?: NodeJS.ProcessEnv } {
   if (cmd !== 'git' && cmd !== 'gh') return { args, env };
   const network = cmd === 'gh' || GIT_NETWORK.has(gitSubcommand(args) ?? '');
   return {
     args: cmd === 'git' ? [...GIT_HARDENING, ...args] : args,
-    env: env ?? gitEnv(network),
+    env: { ...(env ?? gitEnv(network)), ...(cmd === 'git' ? checkoutGit(cwd) : {}) },
   };
+}
+
+/**
+ * Each checkout's own git directory, inside its cache, which only the platform writes; read when git made it. The
+ * checkout's `.git` file is the agents' to change: pointed at a folder of theirs, it would hand the platform's git
+ * their config (a filter is a program).
+ */
+const gitDirs = new Map<string, string>();
+
+/** The git environment of a command in a checkout: its own git directory and working tree, whatever `.git` says. */
+function checkoutGit(cwd: string | undefined): NodeJS.ProcessEnv {
+  const at = cwd && resolve(cwd);
+  for (const [dir, gitDir] of gitDirs) if (at && (at === dir || at.startsWith(`${dir}/`))) return { GIT_DIR: gitDir, GIT_WORK_TREE: dir };
+  return {};
+}
+
+/** The git directory git made for the worktree at `dir`: the one in the cache whose `gitdir` file names it. */
+function worktreeGitDir(cache: string, dir: string): string {
+  const admin = join(cache, 'worktrees');
+  const dotGit = join(realpathSync(dir), '.git');
+  for (const name of readdirSync(admin)) {
+    const file = join(admin, name, 'gitdir');
+    if (existsSync(file) && readFileSync(file, 'utf8').trim() === dotGit) return join(admin, name);
+  }
+  throw new Error(`git made no worktree for ${dir}`);
 }
 
 /** The environment of the platform's own git and gh; with `network`, a proxy's settings and the GitHub token. */
@@ -130,8 +158,22 @@ export function fetchBranches(work: Checkout, repo: string, branches: string[]):
   return withLock(work.cache, () => fetchInto(work.cache, githubUrl(repo), branches.map((b) => `+refs/heads/${b}:refs/remotes/origin/${b}`)));
 }
 
+/**
+ * Refuses to stage a checkout that holds another git repository: `git add` asks a repository nested at a tracked path
+ * for its state, and that git runs with the nested repository's config, which an agent wrote (a filter is a program).
+ */
+async function refuseNestedRepos(cwd: string): Promise<void> {
+  const nul = (text: string) => text.split('\0').filter(Boolean);
+  const gitlinks = nul(await run('git', ['ls-files', '-z', '--stage'], { cwd })).filter((e) => e.startsWith('160000 ')).map((e) => e.slice(e.indexOf('\t') + 1));
+  // An untracked repository is listed as its folder, ending in `/`.
+  const untracked = nul(await run('git', ['ls-files', '-z', '--others', '--exclude-standard'], { cwd })).filter((p) => p.endsWith('/'));
+  const nested = [...gitlinks.filter((p) => existsSync(join(cwd, p, '.git'))), ...untracked];
+  if (nested.length) throw new Error(`The checkout holds a git repository the platform does not commit: ${nested.slice(0, 5).join(', ')}. Remove it, or a person makes that change.`);
+}
+
 export async function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<string> {
-  const platform = platformCommand(cmd, args, opts.env);
+  if (cmd === 'git' && gitSubcommand(args) === 'add' && opts.cwd && checkoutGit(opts.cwd).GIT_DIR) await refuseNestedRepos(opts.cwd);
+  const platform = platformCommand(cmd, args, opts.env, opts.cwd);
   const pending = execFileAsync(cmd, platform.args, {
     cwd: opts.cwd,
     env: platform.env,
@@ -225,9 +267,22 @@ export function checkout(
     const dir = opts.dir ?? join(env.paths.work, 'worktrees', `${basename(cache)}-${randomUUID().slice(0, 8)}`);
     const target = opts.branch ? ['-B', opts.branch] : ['--detach'];
     if (opts.branch) await freeBranch(cache, opts.branch);
-    await run('git', ['-C', cache, 'worktree', 'add', '--force', ...target, dir, commitish]);
+    await addWorktree(cache, dir, [...target, dir, commitish]);
     return { cache, dir };
   });
+}
+
+/** `git worktree add` with `args`, its git directory noted for the platform's git (see gitDirs). Exported for tests. */
+export async function addWorktree(cache: string, dir: string, args: string[]): Promise<void> {
+  await run('git', ['-C', cache, 'worktree', 'add', '--force', ...args]);
+  gitDirs.set(resolve(dir), worktreeGitDir(cache, dir));
+}
+
+/** Removes a worktree: its folder, then what git keeps of it (an agent may have cut the link `worktree remove` checks). */
+async function dropWorktree(cache: string, dir: string): Promise<void> {
+  gitDirs.delete(resolve(dir));
+  await rm(dir, { recursive: true, force: true });
+  await run('git', ['-C', cache, 'worktree', 'prune']);
 }
 
 /**
@@ -239,12 +294,10 @@ export async function freeBranch(cache: string, branch: string): Promise<void> {
   for (const block of list.split('\n\n')) {
     const path = /^worktree (.+)$/m.exec(block)?.[1];
     // The exact line: ai/ABC-1 must not match ai/ABC-10, another card's live checkout.
-    if (path && block.split('\n').includes(`branch refs/heads/${branch}`)) await run('git', ['-C', cache, 'worktree', 'remove', '--force', path]);
+    if (path && block.split('\n').includes(`branch refs/heads/${branch}`)) await dropWorktree(cache, path);
   }
 }
 
 export function removeCheckout({ cache, dir }: Checkout): Promise<void> {
-  return withLock(cache, async () => {
-    await run('git', ['-C', cache, 'worktree', 'remove', '--force', dir]);
-  });
+  return withLock(cache, () => dropWorktree(cache, dir));
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -1700,7 +1700,7 @@ test('a runtime call leaves nothing running: what it started dies with it', asyn
   // A background child that keeps the output open would hang the call, and outlive it, without the group kill.
   const signal = new AbortController().signal;
   const started = Date.now();
-  const out = await spawnStream('sh', ['-c', 'sleep 30 & echo $!'], { cwd: dir, env: process.env, signal, transcript: join(dir, 't.jsonl') });
+  const out = await spawnStream('sh', ['-c', 'sleep 30 & echo $!'], { cwd: dir, env: {}, home: dir, signal, transcript: join(dir, 't.jsonl') });
   assert.ok(Date.now() - started < 10_000, 'the call waited for its background child');
   const pid = Number(out.stdout.trim());
   assert.ok(pid > 0);
@@ -1709,7 +1709,7 @@ test('a runtime call leaves nothing running: what it started dies with it', asyn
   // Aborted, a runtime that ignores SIGTERM goes too, with what it started.
   const abort = new AbortController();
   const pidFile = join(dir, 'pid');
-  const pending = spawnStream('sh', ['-c', `trap '' TERM; sleep 30 & echo $! > ${pidFile}; wait`], { cwd: dir, env: process.env, signal: abort.signal, transcript: join(dir, 'u.jsonl') });
+  const pending = spawnStream('sh', ['-c', `trap '' TERM; sleep 30 & echo $! > ${pidFile}; wait`], { cwd: dir, env: {}, home: dir, signal: abort.signal, transcript: join(dir, 'u.jsonl') });
   await new Promise((r) => setTimeout(r, 300));
   abort.abort('killed');
   await assert.rejects(pending, /stopped/);
@@ -1847,14 +1847,14 @@ test('a run over the token limit stops; no limit, no stop', async () => {
 
 test('each Claude call gets a fresh config directory holding only the platform instructions and skills', async () => {
   const { claudeConfigDir } = await import('../src/providers/claude.ts');
-  const { rm } = await import('node:fs/promises');
-  const [a, b] = [await claudeConfigDir(), await claudeConfigDir()];
+  const home = mkdtempSync(join(tmpdir(), 'call-'));
   try {
-    assert.notEqual(a, b);
+    const a = await claudeConfigDir(home);
+    assert.equal(a, join(home, '.claude'));
     assert.deepEqual(readdirSync(a).sort(), ['CLAUDE.md', 'skills']);
     assert.equal(readFileSync(join(a, 'CLAUDE.md'), 'utf8'), readFileSync(asset('AGENTS.md').path, 'utf8'));
   } finally {
-    await Promise.all([a, b].map((d) => rm(d, { recursive: true, force: true })));
+    rmSync(home, { recursive: true, force: true });
   }
 });
 
@@ -1947,4 +1947,159 @@ test('the prompt of a PR thread holds only what the repository’s people and ap
   assert.match(text, /u1: Rename it/);
   assert.match(text, /u3: Still open/);
   assert.doesNotMatch(text, /push my change/);
+});
+
+test('network: agents reach only allowed hosts, through the platform proxy', async () => {
+  const { allowedBy, proxyEnv, recentlyBlocked, startEgress } = await import('../src/egress.ts');
+  assert.ok(allowedBy(['api.anthropic.com'], 'API.Anthropic.com.'));
+  assert.ok(!allowedBy(['api.anthropic.com'], 'evil-api.anthropic.com'));
+  assert.ok(allowedBy(['*.nuget.org'], 'api.nuget.org'));
+  assert.ok(!allowedBy(['*.nuget.org'], 'nuget.org'), 'a wildcard covers subdomains only');
+  assert.ok(!allowedBy(['*.nuget.org'], 'evilnuget.org'));
+  assert.ok(allowedBy(['*'], 'anything.example'));
+  assert.ok(allowedBy(['::1'], '[::1]'));
+  // General's list: host names, wildcards or `*`, never a URL.
+  const saved = getSetting<unknown>('general', null);
+  const general = { language: 'en-US', pollSeconds: 300, fallback: true, runTokens: 0 };
+  assert.deepEqual(write('general', { ...general, allowedHosts: ['*.Example.com', '*', '10.0.0.1'] }).allowedHosts, ['*.example.com', '*', '10.0.0.1']);
+  assert.throws(() => write('general', { ...general, allowedHosts: ['https://example.com'] }), /not valid/);
+  putSetting('general', saved);
+
+  const { createServer, request } = await import('node:http');
+  const { connect } = await import('node:net');
+  const site = createServer((req, res) => res.end(`site ${req.url}`));
+  await new Promise<void>((r) => site.listen(0, '127.0.0.1', r));
+  const sitePort = (site.address() as { port: number }).port;
+  let list = ['127.0.0.1'];
+  const proxy = await startEgress(() => list);
+  const proxyPort = (proxy.address() as { port: number }).port;
+  try {
+    assert.equal(proxyEnv().HTTPS_PROXY, `http://127.0.0.1:${proxyPort}`);
+    assert.equal(proxyEnv().NO_PROXY, 'localhost,127.0.0.1,::1');
+    const { playwrightConfig } = await import('../src/providers/browser.ts');
+    assert.ok(playwrightConfig('/out', []).includes(`'--proxy-server' 'http://127.0.0.1:${proxyPort}'`), 'the browser is told the proxy');
+    const tunnel = (target: string) =>
+      new Promise<string>((resolve, reject) => {
+        const s = connect(proxyPort, '127.0.0.1', () => s.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`));
+        let got = '';
+        s.on('data', (c) => {
+          got += c.toString();
+          if (got.startsWith('HTTP/1.1 200') && got.includes('\r\n\r\n') && !got.includes('site')) s.write(`GET /tunnel HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
+        });
+        s.on('end', () => resolve(got));
+        s.on('error', reject);
+      });
+    assert.match(await tunnel(`127.0.0.1:${sitePort}`), /^HTTP\/1\.1 200 Connection Established[\s\S]*site \/tunnel/);
+    assert.match(await tunnel('exfil.example:443'), /^HTTP\/1\.1 403 Forbidden[\s\S]*exfil\.example is not an allowed host/);
+    const viaProxy = (url: string) =>
+      new Promise<{ status: number; body: string }>((resolve, reject) => {
+        request({ host: '127.0.0.1', port: proxyPort, path: url, headers: { host: new URL(url).host } }, (res) => {
+          let body = '';
+          res.on('data', (c) => (body += c));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+        }).on('error', reject).end();
+      });
+    assert.deepEqual(await viaProxy(`http://127.0.0.1:${sitePort}/plain`), { status: 200, body: 'site /plain' });
+    assert.equal((await viaProxy('http://exfil.example/x')).status, 403);
+    assert.deepEqual(recentlyBlocked().map((b) => [b.host, b.count]).slice(0, 1), [['exfil.example', 2]]);
+    // A port out of range is refused, not thrown (which would end the platform); a link-local address never, even with `*`.
+    list = ['*'];
+    assert.match(await tunnel('127.0.0.1:99999'), /^HTTP\/1\.1 400/);
+    assert.match(await tunnel('169.254.169.254:80'), /^HTTP\/1\.1 502[\s\S]*link-local/);
+    assert.match(await tunnel(`127.0.0.1:${sitePort}`), /site \/tunnel/, 'the proxy still works');
+  } finally {
+    await new Promise((r) => proxy.close(r));
+    site.close();
+  }
+  assert.deepEqual(proxyEnv(), {}, 'no proxy settings once it stopped');
+});
+
+test('agents run as their own user, with a fresh HOME and nothing of the platform’s environment', async () => {
+  const { agentCommand, agentEnv, spawnAgent } = await import('../src/isolation.ts');
+  assert.deepEqual(agentCommand('claude', ['-p']), ['claude', ['-p']], 'without the agents\' user, as it is');
+  assert.deepEqual(agentCommand('sh', ['-c', 'x'], { uid: 1001, gid: 1001 }), [
+    'setpriv',
+    ['--reuid=1001', '--regid=1001', '--clear-groups', '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs', '--', 'sh', '-c', 'x'],
+  ]);
+  process.env.AGENTCOWORK_SECRET_KEY_FOR_TEST = 'never-here';
+  const e = agentEnv('/tmp/h', { EXTRA: '1' });
+  assert.equal(e.HOME, '/tmp/h');
+  assert.equal(e.EXTRA, '1');
+  assert.deepEqual([e.GIT_CONFIG_KEY_0, e.GIT_CONFIG_VALUE_0], ['safe.directory', '*']);
+  assert.equal(e.AGENTCOWORK_SECRET_KEY_FOR_TEST, undefined);
+  delete process.env.AGENTCOWORK_SECRET_KEY_FOR_TEST;
+
+  const run = (opts: { home?: string }) =>
+    new Promise<string>((resolve) => {
+      const child = spawnAgent('sh', ['-c', 'echo "$HOME"; touch "$HOME/mark"'], { cwd: tmpdir(), ...opts, stdio: ['ignore', 'pipe', 'ignore'] });
+      let out = '';
+      child.stdout!.on('data', (c: Buffer) => (out += c));
+      child.on('close', () => resolve(out.trim()));
+    });
+  const fresh = await run({});
+  assert.match(fresh, /agentcowork-home-/);
+  assert.ok(!existsSync(fresh), 'its own HOME goes when it exits');
+  const given = mkdtempSync(join(tmpdir(), 'given-'));
+  assert.equal(await run({ home: given }), given);
+  assert.ok(existsSync(join(given, 'mark')), 'a HOME the caller gave stays');
+  rmSync(given, { recursive: true, force: true });
+});
+
+test('shared folders: the agents\' group gets folders (setgid) and files, once', async () => {
+  const { shareTree } = await import('../src/isolation.ts');
+  const { chmodSync } = await import('node:fs');
+  const gid = process.getgid!();
+  const dir = mkdtempSync(join(tmpdir(), 'share-'));
+  mkdirSync(join(dir, 'sub'));
+  writeFileSync(join(dir, 'sub', 'f'), 'x', { mode: 0o600 });
+  symlinkSync('/etc/hostname', join(dir, 'link'));
+  chmodSync(join(dir, 'sub'), 0o700);
+  shareTree(dir, gid);
+  assert.equal(lstatSync(join(dir, 'sub', 'f')).mode & 0o7777, 0o660);
+  assert.equal(lstatSync(join(dir, 'sub')).mode & 0o7777, 0o2770);
+  assert.equal(lstatSync(dir).mode & 0o2000, 0o2000);
+  // Done once: a tree whose top folder is shared is left as it is.
+  chmodSync(join(dir, 'sub', 'f'), 0o600);
+  shareTree(dir, gid);
+  assert.equal(lstatSync(join(dir, 'sub', 'f')).mode & 0o7777, 0o600);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("the platform's git in a checkout uses the checkout's own git directory, whatever its .git file says", async () => {
+  const { addWorktree, removeCheckout } = await import('../src/sh.ts');
+  const root = mkdtempSync(join(tmpdir(), 'acw-wt-'));
+  const cache = join(root, 'cache.git');
+  const git = (cwd: string, ...args: string[]) => sh('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd });
+  const seed = join(root, 'seed');
+  await git(root, 'init', '-q', seed);
+  mkdirSync(join(seed, 'src'));
+  writeFileSync(join(seed, 'src', 'a.ts'), 'a');
+  await git(seed, 'add', '-A');
+  await git(seed, 'commit', '-qm', 'c1');
+  await git(root, 'clone', '-q', '--bare', seed, cache);
+  const dir = join(root, 'work');
+  await addWorktree(cache, dir, ['--detach', dir, 'HEAD']);
+  // The agent points .git at a folder of the checkout's that holds its own config: a clean filter is a program.
+  const pwned = join(root, 'pwned');
+  const evil = join(dir, 'src');
+  await git(root, 'init', '-q', '--bare', join(root, 'tmpl'));
+  for (const f of ['HEAD', 'objects', 'refs']) await sh('cp', ['-r', join(root, 'tmpl', f), evil]);
+  writeFileSync(join(evil, 'config'), `[core]\n\trepositoryformatversion = 0\n\tbare = false\n[filter "x"]\n\tclean = touch ${pwned}; cat\n`);
+  writeFileSync(join(dir, '.gitattributes'), '* filter=x\n');
+  writeFileSync(join(dir, '.git'), `gitdir: ${evil}\n`);
+  writeFileSync(join(dir, 'new.ts'), 'n');
+  const status = await git(dir, 'status', '--porcelain');
+  await git(dir, 'add', '-A');
+  assert.ok(!existsSync(pwned), "the agent's filter never ran");
+  assert.match(status, /\?\? new\.ts/, 'the status is the checkout’s own');
+  // A repository nested in the checkout is never staged: `git add` would ask it for its state with its own config.
+  writeFileSync(join(dir, '.git'), `gitdir: ${join(cache, 'worktrees', 'work')}\n`);
+  mkdirSync(join(dir, 'sub'));
+  writeFileSync(join(dir, 'sub', '.git'), `gitdir: ${evil}\n`);
+  await assert.rejects(git(dir, 'add', '-A'), /holds a git repository the platform does not commit: sub\//);
+  assert.ok(!existsSync(pwned));
+  await removeCheckout({ cache, dir });
+  assert.ok(!existsSync(dir));
+  assert.equal((await git(cache, 'worktree', 'list')).split('\n').length, 1, 'git forgot the worktree');
+  rmSync(root, { recursive: true, force: true });
 });

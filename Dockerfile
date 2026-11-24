@@ -66,7 +66,8 @@ ARG SECURITY_UPDATES=
 COPY --from=tools /opt/apt-keys/ /etc/apt/keyrings/
 # chromium brings the system libraries every Playwright browser needs (the agent runs without root, so
 # `playwright install --with-deps` can't add them later) and is the browser of the Sentinel's browser tools.
-# python3 runs the ui-taste skill's scanner (standard library only).
+# python3 runs the ui-taste skill's scanner (standard library only). nftables keeps the agents' user (`agent`, see
+# entrypoint.sh) off the network except through the platform's proxy.
 # `script` (the pseudo-terminal the Claude account login needs) is already in the base. npm is removed:
 # pnpm is the only package manager.
 RUN : "security updates of ${SECURITY_UPDATES}" \
@@ -74,10 +75,13 @@ RUN : "security updates of ${SECURITY_UPDATES}" \
  && echo "deb [signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/debian/13/prod trixie main" > /etc/apt/sources.list.d/microsoft.list \
  && echo "deb [signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
  && apt-get update && apt-get -y upgrade \
- && apt-get install -y --no-install-recommends git gh ${DOTNET_PACKAGES} chromium fonts-liberation python3 \
+ && apt-get install -y --no-install-recommends git gh ${DOTNET_PACKAGES} chromium fonts-liberation python3 nftables \
  && rm -rf /var/lib/apt/lists/* \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
- && mkdir -p /data/db /data/work /data/auth /data/logs /data/brain && chown -R node:node /data
+ && groupadd --gid 1001 agent && useradd --uid 1001 --gid agent --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin agent \
+ && usermod --append --groups agent node \
+ && mkdir -p /data/db /data/work /data/auth /data/logs /data/brain && chown -R node:node /data \
+ && chmod 750 /data/db /data/logs /data/brain
 COPY --from=tools /opt/npm/lib/node_modules/pnpm /usr/local/lib/pnpm
 # Claude Code is a standalone native (glibc) binary; the npm wrapper around it is not needed.
 COPY --from=tools /opt/npm/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude
@@ -107,8 +111,12 @@ COPY defaults ./defaults
 RUN chmod -R a+rX /app/defaults
 COPY --from=ui /build/ui/dist ./ui/dist
 
+COPY --chmod=755 entrypoint.sh /usr/local/bin/agentcowork-entrypoint
+
+# node by default; started as root (compose.example.yaml), the entrypoint isolates the agents and then runs as node.
 USER node
 ENV HOME=/home/node DATA_DIR=/data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s CMD ["node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+ENTRYPOINT ["agentcowork-entrypoint"]
 CMD ["node", "src/main.ts"]

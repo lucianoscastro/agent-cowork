@@ -1,4 +1,5 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { NO_FOLLOW } from '../isolation.ts';
 import { join } from 'node:path';
 import { read, SECRETS } from '../config.ts';
 import { getSecret } from '../db.ts';
@@ -139,7 +140,7 @@ export async function saveMarkdownAttachments(key: string, dir: string, pick: (n
   for (const a of files) {
     const res = await fetch(a.content, { headers: { Authorization: `Basic ${btoa(`${email}:${getSecret(SECRETS.jiraToken) ?? ''}`)}` } });
     if (!res.ok) throw new Error(`Jira attachment ${a.filename} of ${key}: ${res.status}`);
-    await writeFile(join(dir, a.filename), Buffer.from(await res.arrayBuffer()));
+    await writeFile(join(dir, a.filename), Buffer.from(await res.arrayBuffer()), { flag: NO_FOLLOW });
   }
   return files.map((a) => a.filename);
 }

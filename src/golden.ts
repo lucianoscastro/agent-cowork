@@ -2,7 +2,10 @@
  * The golden set: closed cards whose pull requests were merged, built again in dry run on the models given, to compare
  * models and prompts on work whose outcome is known. Inside the container:
  *
- *   node src/golden.ts KEY-1 KEY-2 [--model <lead model>] [--plan-model <model>]
+ *   agentcowork-entrypoint node src/golden.ts KEY-1 KEY-2 [--model <lead model>] [--plan-model <model>]
+ *
+ * (through the entrypoint, so it runs as the platform does: as node, its agents as their own user; `docker exec` alone
+ * runs as root, whose git refuses the platform's repositories).
  *
  * Each card starts from the commit its first build started from and sees only what the card said before any build
  * (see Replay). It is scored by running the tests its merged pull requests added or changed against what the agent
@@ -14,9 +17,11 @@ import type { WatchedPr } from './agents/pr-follow-up.ts';
 import { runVerify } from './agents/verify.ts';
 import { read } from './config.ts';
 import { Items, openDb } from './db.ts';
+import { startEgress } from './egress.ts';
 import { assertBootstrap, env } from './env.ts';
 import { applyGithubEnv, ghJson } from './integrations/github.ts';
-import { prepareRuntimeHomes } from './providers/index.ts';
+import { prepareIsolation } from './isolation.ts';
+import { homes, prepareRuntimeHomes } from './providers/index.ts';
 import { getRun, type Run, withRun } from './runs.ts';
 import { run as sh } from './sh.ts';
 import { runsUsage } from './usage.ts';
@@ -26,6 +31,10 @@ const option = (name: string) => {
   const i = args.indexOf(name);
   return i < 0 ? undefined : args.splice(i, 2)[1];
 };
+if (process.getuid?.() === 0) {
+  console.error('Run it through the entrypoint: docker exec <container> agentcowork-entrypoint node src/golden.ts …');
+  process.exit(2);
+}
 const model = option('--model');
 const planModel = option('--plan-model');
 if (!args.length) {
@@ -34,9 +43,11 @@ if (!args.length) {
 }
 
 assertBootstrap();
+prepareIsolation([homes.codex, homes.agy]);
 openDb(env.paths.db, env.secretKey);
 prepareRuntimeHomes();
 applyGithubEnv();
+await startEgress();
 
 const cfg = read('agents.developer');
 const settings = { ...(model ? { lead: { ...cfg.lead, model } } : {}), ...(planModel !== undefined ? { planModel } : {}) };

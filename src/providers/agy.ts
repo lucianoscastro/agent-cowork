@@ -1,9 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync, symlinkSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SECRETS } from '../config.ts';
 import { getSecret } from '../db.ts';
-import { log, run as sh, safeEnv } from '../sh.ts';
+import { agentDir, NO_FOLLOW, runAgent } from '../isolation.ts';
+import { log } from '../sh.ts';
 import type { ProviderRequest, ProviderResult } from './index.ts';
 import { authMethod, homes } from './index.ts';
 import { agyLimits, recordLimits } from './limits.ts';
@@ -14,20 +15,29 @@ async function configure(): Promise<NodeJS.ProcessEnv> {
   const apiKey = authMethod('agy') === 'api-key';
   const dir = join(homes.agy, 'antigravity-cli');
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, 'settings.json'), JSON.stringify(apiKey ? { modelProvider: 'gemini' } : {}));
+  await writeFile(join(dir, 'settings.json'), JSON.stringify(apiKey ? { modelProvider: 'gemini' } : {}), { flag: NO_FOLLOW });
   return apiKey ? { GEMINI_API_KEY: getSecret(SECRETS.providerApiKey('agy')) } : {};
+}
+
+/** agy reads its login and settings from `~/.gemini`: the runtime home, linked into an agent HOME. */
+export function linkAgyHome(home: string): string {
+  symlinkSync(homes.agy, join(home, '.gemini'));
+  return home;
 }
 
 /** Records the account's quota after a run, for the usage page. Never throws: the quota is informative. */
 export async function refreshUsage(cwd: string): Promise<void> {
   // The quota belongs to the Google account; with an API key there is none to read.
   if (authMethod('agy') === 'api-key' || !existsSync(homes.agyAccountMarker)) return;
+  const home = linkAgyHome(agentDir('home'));
   try {
-    const out = await sh('agy', ['-p', '/usage', '--output-format', 'json', '--print-timeout', '30s'], { cwd, env: safeEnv(await configure()), timeoutMs: 45_000 });
+    const out = await runAgent('agy', ['-p', '/usage', '--output-format', 'json', '--print-timeout', '30s'], { cwd, env: await configure(), home, timeoutMs: 45_000 });
     const data = (JSON.parse(out) as { command?: { name?: string; data?: Parameters<typeof agyLimits>[0] } }).command;
     if (data?.name === 'usage' && data.data) recordLimits('agy', agyLimits(data.data));
   } catch (err) {
     log('agy: reading /usage failed:', (err as Error).message);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 }
 
@@ -44,7 +54,8 @@ export async function runAgy<T>(req: ProviderRequest): Promise<ProviderResult<T>
   ];
   const out = await spawnStream('agy', args, {
     cwd: req.cwd,
-    env: safeEnv(await configure()),
+    env: await configure(),
+    home: linkAgyHome(req.home!),
     signal: req.run.signal,
     transcript: req.run.transcript(req.label),
   });

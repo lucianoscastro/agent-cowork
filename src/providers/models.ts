@@ -1,6 +1,9 @@
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { type ProviderId, SECRETS } from '../config.ts';
 import { getSecret } from '../db.ts';
-import { run, safeEnv } from '../sh.ts';
+import { agentDir, runAgent } from '../isolation.ts';
+import { linkAgyHome } from './agy.ts';
 import { authMethod, homes, providerStatus } from './index.ts';
 
 export type ModelOption = { id: string; label: string };
@@ -28,10 +31,8 @@ async function claudeModels(): Promise<ModelOption[]> {
 
 async function codexModels(): Promise<ModelOption[]> {
   const key = authMethod('codex') === 'api-key' ? getSecret(SECRETS.providerApiKey('codex')) : undefined;
-  const out = await run('codex', ['debug', 'models'], {
-    env: safeEnv({ CODEX_HOME: homes.codex, ...(key ? { OPENAI_API_KEY: key, CODEX_API_KEY: key } : {}) }),
-    timeoutMs: 30_000,
-  });
+  // As the agents' user, like every call: the runtime's home is theirs to write.
+  const out = await runAgent('codex', ['debug', 'models'], { cwd: tmpdir(), env: { CODEX_HOME: homes.codex, ...(key ? { OPENAI_API_KEY: key, CODEX_API_KEY: key } : {}) }, timeoutMs: 30_000 });
   const { models } = JSON.parse(out) as { models: { slug: string; display_name?: string; description?: string; visibility?: string }[] };
   // Hidden entries are internal (auto-review, reserves), not models an agent should pick.
   return models
@@ -41,7 +42,8 @@ async function codexModels(): Promise<ModelOption[]> {
 
 async function agyModels(): Promise<ModelOption[]> {
   const key = authMethod('agy') === 'api-key' ? getSecret(SECRETS.providerApiKey('agy')) : undefined;
-  const out = await run('agy', ['models'], { env: safeEnv(key ? { GEMINI_API_KEY: key } : {}), timeoutMs: 30_000 });
+  const home = linkAgyHome(agentDir('home'));
+  const out = await runAgent('agy', ['models'], { cwd: tmpdir(), env: key ? { GEMINI_API_KEY: key } : {}, home, timeoutMs: 30_000 }).finally(() => rmSync(home, { recursive: true, force: true }));
   // ponytail: parses the first slug-like token of each line; switch to a JSON flag if agy adds one.
   return out
     .split('\n')

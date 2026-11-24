@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { asset } from '../assets.ts';
 import { type AuthMethod, PROVIDERS, type ProviderId, read, SECRETS } from '../config.ts';
 import { getSecret, LIMIT_ERROR } from '../db.ts';
 import { env } from '../env.ts';
 import type { ToolServer } from '../databases.ts';
+import { agentDir } from '../isolation.ts';
 import type { Run } from '../runs.ts';
 import { run as sh } from '../sh.ts';
 import { runsUsage } from '../usage.ts';
@@ -34,6 +34,8 @@ export type ProviderRequest = {
   tools?: ToolServer;
   /** Providers to fall back to only after the others, e.g. the other reviewer's, to keep reviews independent. */
   avoid?: ProviderId[];
+  /** The call's own folder, its HOME (set by callProvider): the runtime's config and files live there, and go with it. */
+  home?: string;
 };
 
 /**
@@ -72,26 +74,24 @@ export function resetRuntimeHome(id: ProviderId): void {
     symlinkSync(target, at);
   };
   if (id === 'codex') {
-    mkdirSync(homes.codex, { recursive: true, mode: 0o700 });
+    mkdirSync(homes.codex, { recursive: true, mode: 0o770 });
     link(asset('AGENTS.md').path, join(homes.codex, 'AGENTS.md'));
     link(asset('skills').path, join(homes.codex, 'skills'));
     // Codex writes only project trust entries there; the platform passes its own settings with -c.
     rmSync(join(homes.codex, 'config.toml'), { force: true });
   }
   if (id === 'agy') {
-    mkdirSync(join(homes.agy, 'antigravity-cli'), { recursive: true, mode: 0o700 });
+    mkdirSync(join(homes.agy, 'antigravity-cli'), { recursive: true, mode: 0o770 });
     link(asset('AGENTS.md').path, join(homes.agy, 'GEMINI.md'));
     rmSync(join(homes.agy, 'settings.json'), { force: true });
     rmSync(join(homes.agy, 'extensions'), { recursive: true, force: true });
   }
 }
 
-/** Readies the runtime homes at startup; agy also reads `~/.gemini`, which HOME (a tmpfs) loses on each restart. */
+/** Readies the runtime homes at startup. */
 export function prepareRuntimeHomes(): void {
   resetRuntimeHome('codex');
   resetRuntimeHome('agy');
-  const gemini = join(homedir(), '.gemini');
-  if (!existsSync(gemini)) symlinkSync(homes.agy, gemini);
 }
 
 export function authMethod(id: ProviderId): AuthMethod {
@@ -198,11 +198,12 @@ async function callProvider<T>(id: ProviderId, req: ProviderRequest): Promise<Pr
   if (req.browser && id !== 'claude') throw new Error(`${req.label}: browser tools need Claude Code`);
   if (!req.browser && id === 'claude' && req.browserIfClaude) req = { ...req, browser: req.browserIfClaude };
   resetRuntimeHome(id);
+  const home = agentDir('call');
   const call = () =>
-    id === 'claude' ? runClaude<T>({ ...req, model }) : id === 'codex' ? runCodex<T>({ ...req, model }) : runAgy<T>({ ...req, model });
+    id === 'claude' ? runClaude<T>({ ...req, model, home }) : id === 'codex' ? runCodex<T>({ ...req, model, home }) : runAgy<T>({ ...req, model, home });
   const guarded = () => (req.mode === 'read-only' ? guardReadOnly(req.run, req.label, req.cwd, call) : call());
   const start = Date.now();
-  const result = await guarded().catch((err: Error) => {
+  const result = await guarded().finally(() => rmSync(home, { recursive: true, force: true })).catch((err: Error) => {
     // The provider's own report (rate limit event, session file) names the exact reset; else a window already
     // full; else the error text (an hour when it names none). Only a limit error pauses.
     const guess = limitPause(err.message);

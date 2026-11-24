@@ -173,6 +173,18 @@ const translations = {
     'Switch provider on a usage limit': 'Trocar de provedor ao bater limite de uso',
     "When a provider is paused or hits its usage limit, the call moves on to the next one (Claude Code, Codex, agy) with that provider's default model; a run fails only when all three are limited. Browser steps stay on Claude Code.":
       'Quando um provedor está pausado ou bate o limite de uso, a chamada passa para o próximo (Claude Code, Codex, agy) com o modelo padrão dele; um run só falha quando os três estão limitados. Etapas com navegador ficam no Claude Code.',
+    Network: 'Rede',
+    "agents share the platform's user": 'agentes usam o usuário da plataforma',
+    'agents run as their own user': 'agentes com usuário próprio',
+    'firewall off': 'firewall desligado',
+    'firewall on': 'firewall ligado',
+    "Agents can read the platform's data: {reason}.": 'Os agentes conseguem ler os dados da plataforma: {reason}.',
+    'Agents can reach any host, past the list below: {reason}.': 'Os agentes conseguem acessar qualquer host, além da lista abaixo: {reason}.',
+    "Agents and the repositories' commands reach the network only through the platform, and only these hosts. One per line: a host (api.example.com), its subdomains (*.example.com), or * for any host. The hosts of the projects' test environments are allowed too.":
+      'Os agentes e os comandos dos repositórios acessam a rede só pela plataforma, e só estes hosts. Um por linha: um host (api.example.com), os subdomínios dele (*.example.com) ou * para qualquer host. Os hosts dos ambientes de teste dos projetos também são permitidos.',
+    'Allowed hosts': 'Hosts permitidos',
+    'Refused lately': 'Recusados recentemente',
+    '{n} times': '{n} vezes',
     'Verify commands by stack': 'Comandos de verificação por stack',
     'What the platform runs, from the repository root, before a PR is opened or a Dependabot PR is merged. Each repository under Projects names its stack and may replace these with its own commands. Mirror your CI.':
       'O que a plataforma roda, a partir da raiz do repositório, antes de abrir um PR ou fazer merge de um PR do Dependabot. Cada repositório em Projetos indica a sua stack e pode substituir estes comandos pelos seus. Espelhe o seu CI.',
@@ -391,6 +403,18 @@ const translations = {
     'Token limit per run': 'Límite de tokens por ejecución',
     'A run that uses more stops after its call and goes to the Inbox. 0: no limit.': 'Una ejecución que use más se detiene tras su llamada y va al Inbox. 0: sin límite.',
     'Switch provider on a usage limit': 'Cambiar de proveedor al alcanzar un límite de uso',
+    Network: 'Red',
+    "agents share the platform's user": 'los agentes usan el usuario de la plataforma',
+    'agents run as their own user': 'agentes con usuario propio',
+    'firewall off': 'firewall apagado',
+    'firewall on': 'firewall encendido',
+    "Agents can read the platform's data: {reason}.": 'Los agentes pueden leer los datos de la plataforma: {reason}.',
+    'Agents can reach any host, past the list below: {reason}.': 'Los agentes pueden acceder a cualquier host, más allá de la lista de abajo: {reason}.',
+    "Agents and the repositories' commands reach the network only through the platform, and only these hosts. One per line: a host (api.example.com), its subdomains (*.example.com), or * for any host. The hosts of the projects' test environments are allowed too.":
+      'Los agentes y los comandos de los repositorios acceden a la red solo a través de la plataforma, y solo a estos hosts. Uno por línea: un host (api.example.com), sus subdominios (*.example.com) o * para cualquier host. Los hosts de los entornos de prueba de los proyectos también están permitidos.',
+    'Allowed hosts': 'Hosts permitidos',
+    'Refused lately': 'Rechazados recientemente',
+    '{n} times': '{n} veces',
     "When a provider is paused or hits its usage limit, the call moves on to the next one (Claude Code, Codex, agy) with that provider's default model; a run fails only when all three are limited. Browser steps stay on Claude Code.":
       'Cuando un proveedor está en pausa o alcanza su límite de uso, la llamada pasa al siguiente (Claude Code, Codex, agy) con el modelo predeterminado de ese proveedor; una ejecución solo falla cuando los tres están limitados. Los pasos con navegador se quedan en Claude Code.',
     'Verify commands by stack': 'Comandos de verificación por stack',

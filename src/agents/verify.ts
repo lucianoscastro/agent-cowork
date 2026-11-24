@@ -1,15 +1,15 @@
-import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readdirSync } from 'node:fs';
 import { read, verifyCommands } from '../config.ts';
+import { spawnAgent } from '../isolation.ts';
 import type { Run } from '../runs.ts';
-import { run as sh, safeEnv } from '../sh.ts';
+import { run as sh } from '../sh.ts';
 
 const VERIFY_TIMEOUT_MS = 30 * 60_000;
 const FAILURE_TAIL = 2000;
 
 /**
- * Runs one command, appending its output to the run's verify transcript as it comes, so the live view
- * shows it. Resolves with the exit code and the output tail.
+ * Runs one command as an agent process (the repository's code is untrusted), appending its output to the run's verify
+ * transcript as it comes, so the live view shows it. Resolves with the exit code and the output tail.
  */
 export function streamCommand(
   run: Run,
@@ -22,7 +22,7 @@ export function streamCommand(
   const write = (e: object) => appendFileSync(transcript, `${JSON.stringify(e)}\n`);
   write({ type: 'verify.start', role, command });
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-c', `(${command}) 2>&1`], { cwd, env: safeEnv(opts.env), signal: run.signal, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnAgent('sh', ['-c', `(${command}) 2>&1`], { cwd, env: opts.env, signal: run.signal, stdio: ['ignore', 'pipe', 'pipe'] });
     const timeoutMs = opts.timeoutMs ?? VERIFY_TIMEOUT_MS;
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
     let tail = '';
@@ -31,8 +31,8 @@ export function streamCommand(
       tail = (tail + text).slice(-FAILURE_TAIL);
       write({ type: 'verify.out', text });
     };
-    child.stdout.on('data', onData);
-    child.stderr.on('data', onData);
+    child.stdout!.on('data', onData);
+    child.stderr!.on('data', onData);
     child.on('error', (err) => {
       clearTimeout(timer);
       reject(err);

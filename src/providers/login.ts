@@ -1,9 +1,10 @@
-import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { rmSync, writeFileSync } from 'node:fs';
+import type { ChildProcess } from 'node:child_process';
+import { closeSync, openSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type ProviderId, SECRETS } from '../config.ts';
 import { audit, deleteSecret, putSetting, setSecret } from '../db.ts';
-import { safeEnv } from '../sh.ts';
+import { agentDir, NO_FOLLOW, spawnAgent } from '../isolation.ts';
+import { linkAgyHome } from './agy.ts';
 import { homes } from './index.ts';
 
 export type LoginState = {
@@ -30,7 +31,7 @@ export function lastWords(raw: string): string {
     .filter((l) => l.length > 2 && !/^[─━═╭╮╰╯│┃\s]+$/.test(l));
   return lines.slice(-3).join(' · ').replace(SECRETISH, '[hidden]').slice(-300);
 }
-type Session = { state: LoginState; child: ChildProcessWithoutNullStreams; output: string; sentAt: number; checking?: boolean };
+type Session = { state: LoginState; child: ChildProcess; output: string; sentAt: number; checking?: boolean };
 
 /**
  * claude setup-token asks only for `user:inference`, which cannot read who the account is. Asking for
@@ -96,18 +97,19 @@ export function parseLoginOutput(provider: ProviderId, raw: string): { url?: str
   return { url: text.match(/https:\/\/accounts\.google\.com\/o\/oauth2\/auth\?\S+/)?.[0] };
 }
 
+/** The login command, as an agent process: the runtime then writes its credential files as the agents' user. */
 function command(provider: ProviderId): [string, string[], NodeJS.ProcessEnv] {
   if (provider === 'claude') {
     // setup-token draws its UI with Ink and prints nothing without a TTY; `script` provides one.
     // A wide terminal keeps the printed token on one line: a wrapped one cannot be told apart from the
     // text printed after it.
-    return ['script', ['-qfec', 'stty cols 500 rows 50 2>/dev/null; claude setup-token', '/dev/null'], safeEnv({ TERM: 'xterm-256color' })];
+    return ['script', ['-qfec', 'stty cols 500 rows 50 2>/dev/null; claude setup-token', '/dev/null'], { TERM: 'xterm-256color' }];
   }
   // Browser flow, not --device-auth (workspaces can disable device codes). Codex waits for the OAuth
   // redirect on 127.0.0.1:1455 inside the container; the admin pastes that redirect address back.
-  if (provider === 'codex') return ['codex', ['login'], safeEnv({ CODEX_HOME: homes.codex })];
+  if (provider === 'codex') return ['codex', ['login'], { CODEX_HOME: homes.codex }];
   // agy prints a Google sign-in URL and waits (60 s) for the pasted code, but only on a TTY.
-  return ['script', ['-qfec', "agy -p 'Reply with OK.' --output-format json", '/dev/null'], safeEnv({ TERM: 'xterm-256color' })];
+  return ['script', ['-qfec', "agy -p 'Reply with OK.' --output-format json", '/dev/null'], { TERM: 'xterm-256color' }];
 }
 
 export function loginState(provider: ProviderId): LoginState | undefined {
@@ -118,7 +120,9 @@ export function loginState(provider: ProviderId): LoginState | undefined {
 export function startLogin(provider: ProviderId, actor: string): LoginState {
   cancelLogin(provider);
   const [cmd, args, env] = command(provider);
-  const child = spawn(cmd, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const home = provider === 'agy' ? linkAgyHome(agentDir('home')) : undefined;
+  const child = spawnAgent(cmd, args, { env, home, stdio: ['pipe', 'pipe', 'pipe'] });
+  if (home) child.once('exit', () => rmSync(home, { recursive: true, force: true }));
   const session: Session = { state: { provider, status: 'starting' } as LoginState, child, output: '', sentAt: 0 };
   sessions.set(provider, session);
   const timer = setTimeout(() => {
@@ -157,14 +161,18 @@ export function startLogin(provider: ProviderId, actor: string): LoginState {
       if (words) session.state = { ...session.state, message: words };
     }
   };
-  child.stdout.on('data', onOutput);
-  child.stderr.on('data', onOutput);
+  child.stdout!.on('data', onOutput);
+  child.stderr!.on('data', onOutput);
   child.on('error', (err) => (session.state = { provider, status: 'failed', message: err.message }));
   child.on('close', (code) => {
     clearTimeout(timer);
     if (session.state.status === 'done' || session.state.status === 'failed') return;
     if (code === 0 && provider !== 'claude') {
-      if (provider === 'agy') writeFileSync(homes.agyAccountMarker, new Date().toISOString());
+      if (provider === 'agy') {
+        const fd = openSync(homes.agyAccountMarker, NO_FOLLOW, 0o664);
+        writeFileSync(fd, new Date().toISOString());
+        closeSync(fd);
+      }
       audit(actor, 'provider.login', `${provider} account connected`);
       session.state = { provider, status: 'done', message: `${provider} account connected` };
     } else {
@@ -201,8 +209,8 @@ export async function submitLoginCode(provider: ProviderId, code: string): Promi
   // Both code prompts run on a pseudo-terminal, where Enter is a carriage return. Enter goes on its own:
   // terminal UIs read one chunk with text and Enter as a paste, and keep waiting for the real Enter.
   session.sentAt = session.output.length;
-  session.child.stdin.write(pasted);
-  setTimeout(() => session.child.stdin.write('\r'), 400);
+  session.child.stdin!.write(pasted);
+  setTimeout(() => session.child.stdin!.write('\r'), 400);
   session.state = { ...session.state, status: 'finishing', message: 'Code sent, finishing login…' };
   setTimeout(() => {
     if (sessions.get(provider) !== session || session.state.status !== 'finishing') return;

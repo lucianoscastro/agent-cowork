@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { readAgentFile } from '../isolation.ts';
 import { join } from 'node:path';
 import type { ProviderId } from '../config.ts';
 import { sql } from '../db.ts';
@@ -80,7 +81,7 @@ export function codexSessionLimits(home: string, threadId: string): Omit<Provide
     if (!existsSync(dir)) continue;
     const file = readdirSync(dir).find((f) => f.endsWith(`${threadId}.jsonl`));
     if (!file) continue;
-    return lastCodexWindows(readFileSync(join(dir, file), 'utf8'));
+    return lastCodexWindows(readAgentFile(join(dir, file)).toString('utf8'));
   }
   return undefined;
 }

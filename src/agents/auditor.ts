@@ -6,9 +6,10 @@ import { Items } from '../db.ts';
 import { env } from '../env.ts';
 import { gh } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
+import { runAgent } from '../isolation.ts';
 import { runProvider } from '../providers/index.ts';
 import { listRuns, type Run, withRun } from '../runs.ts';
-import { checkout, forEachLimit, log, removeCheckout, renderPrompt, run as sh, safeEnv } from '../sh.ts';
+import { checkout, forEachLimit, log, removeCheckout, renderPrompt, run as sh } from '../sh.ts';
 import { takeForce } from './status.ts';
 
 const DAY_MS = 86_400_000;
@@ -149,8 +150,8 @@ const TOOL_TIMEOUT_MS = 10 * 60_000;
 const TOOL_OUTPUT_CHARS = 15_000;
 
 /**
- * Dependency data the model cannot get offline: advisories and latest versions from the package managers,
- * run by the platform in the checkout without credentials. Each failure is reported, not fatal.
+ * Dependency data the model cannot get offline: advisories and latest versions from the package managers, run in the
+ * checkout as agent processes (a restore runs the repository's build files). Each failure is reported, not fatal.
  */
 async function dependencyData(run: Run, dir: string): Promise<string> {
   const tools: [string, string[]][] = [];
@@ -166,7 +167,7 @@ async function dependencyData(run: Run, dir: string): Promise<string> {
   const parts: string[] = [];
   for (const [cmd, args] of tools) {
     run.event('info', `dependencies: ${cmd} ${args.join(' ')}`);
-    const out = await sh(cmd, args, { cwd: dir, env: safeEnv(), timeoutMs: TOOL_TIMEOUT_MS, signal: run.signal }).catch((err: Error) => `(failed: ${err.message})`);
+    const out = await runAgent(cmd, args, { cwd: dir, timeoutMs: TOOL_TIMEOUT_MS, signal: run.signal }).catch((err: Error) => `(failed: ${err.message})`);
     if (args[0] === 'restore') continue;
     parts.push(`### ${cmd} ${args.join(' ')}\n\`\`\`\n${out.slice(0, TOOL_OUTPUT_CHARS)}\n\`\`\``);
   }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { brainContext, learning } from '../brain.ts';
 import { outputLanguage, type Project, read, repoFolder } from '../config.ts';
@@ -7,6 +7,7 @@ import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { env } from '../env.ts';
 import { gh } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
+import { NO_FOLLOW, readAgentFile } from '../isolation.ts';
 import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
 import { wake } from '../scheduler.ts';
@@ -418,7 +419,7 @@ export async function save(run: Run | undefined, folder: string, files: Doc[], p
   const good = sealed.filter((f) => !bad.includes(f)).slice(0, 20);
   if (!good.some((f) => f.name === main)) throw new Error(`The documents have no ${main}`);
   for (const name of (await docsIn(folder)).keys()) await rm(join(folder, name));
-  for (const f of good) await writeFile(join(folder, f.name), f.content);
+  for (const f of good) await writeFile(join(folder, f.name), f.content, { flag: NO_FOLLOW });
   const refused = prototypes ? bad.filter((f) => fits(f.name) && f.name.endsWith('.html')) : [];
   return refused.map((f) => `\`${f.name}\` was dropped: a prototype is one whole HTML document that starts with \`<!doctype html>\`, under 200 KB, with no web address anywhere (no CDN, font, image, script or link address, and no page refresh).`);
 }
@@ -460,5 +461,5 @@ export function offline(html: string): string | undefined {
 /** The Product Manager's documents in the work folder, by name. */
 async function docsIn(folder: string): Promise<Map<string, string>> {
   const names = (await readdir(folder, { withFileTypes: true }).catch(() => [])).filter((e) => e.isFile() && jira.SPEC_DOC.test(e.name)).map((e) => e.name);
-  return new Map(await Promise.all(names.map(async (n) => [n, await readFile(join(folder, n), 'utf8')] as const)));
+  return new Map(names.map((n) => [n, readAgentFile(join(folder, n)).toString('utf8')] as const));
 }

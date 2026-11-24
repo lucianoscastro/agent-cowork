@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type ModelChoice, outputLanguage, type Project, type ProviderId, read, repoFolder, type Reviewer, type Settings, verifyCommands } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { env } from '../env.ts';
 import { actionsLinks, failedLogTail, gh, ghJson } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
+import { agentDir, readAgentFile } from '../isolation.ts';
 import { playwrightConfig } from '../providers/browser.ts';
 import { runProvider, type Subagent, TOOL_RUNTIMES, toolsStatus } from '../providers/index.ts';
 import { withRun, type Run, type RunEnd } from '../runs.ts';
@@ -260,7 +260,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     const docs = await jira.saveMarkdownAttachments(key, join(workspace, 'spec'), (name) => !replay || name !== jira.PLAN_DOC);
     // A card under a discovery: its parent's discovery and prototypes, the look people approved before the card existed.
     const discovery = await jira.saveDiscovery(issue, join(workspace, 'discovery'));
-    const spec = new Map(await Promise.all(docs.filter((n) => jira.SPEC_DOC.test(n)).map(async (n) => [n, await readFile(join(workspace, 'spec', n), 'utf8')] as const)));
+    const spec = new Map(await Promise.all(docs.filter((n) => jira.SPEC_DOC.test(n)).map(async (n) => [n, readAgentFile(join(workspace, 'spec', n)).toString('utf8')] as const)));
     const checks = fromSpec(spec, parseChecks);
     const tasks = fromSpec(spec, parseTasks);
     // Task by task from tasks.md (a medium or larger change); a small spec's few tasks, like a card without a spec, in
@@ -450,7 +450,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     const context = [
       ...(await Promise.all(repos.map((r) => sh('git', ['rev-parse', `refs/remotes/origin/${r.base}`], { cwd: r.work.dir })))),
       jira.formatComments(people),
-      ...(await Promise.all((discovery?.files ?? []).map((f) => readFile(join(workspace, 'discovery', f), 'utf8')))),
+      ...(discovery?.files ?? []).map((f) => readAgentFile(join(workspace, 'discovery', f)).toString('utf8')),
     ];
     const refs = stepwise && !replay ? taskFingerprints(spec, checks, tasks, context).map((fp, i) => checkpointRef(key, tasks[i], fp)) : [];
     const resumed = await resumeBuild(repos, refs);
@@ -638,13 +638,14 @@ const BROWSER_BRIEF =
  * The screenshots move flat into the run's folder, named after the call, so the run page lists them.
  */
 async function localBrowser(run: Run, label: string): Promise<{ config: string; collect: () => Promise<void> }> {
-  const outDir = join(run.logDir, `${label}-browser`);
-  await mkdir(outDir, { recursive: true });
-  const config = join(tmpdir(), `developer-${run.id}-${label}-mcp.json`);
-  await writeFile(config, playwrightConfig(outDir, ['--allowed-origins', 'http://localhost:*;http://127.0.0.1:*', '--console-level', 'warning', '--viewport-size', '1440x900']));
+  // A folder the agents' user (the browser's) can write; copied, not renamed, to the logs on another file system.
+  const outDir = agentDir('browser');
+  const config = join(outDir, 'mcp.json');
+  await writeFile(config, playwrightConfig(outDir, ['--allowed-origins', 'http://localhost:*;http://127.0.0.1:*', '--console-level', 'warning', '--viewport-size', '1440x900']), { flag: 'wx' });
   const collect = async () => {
-    await rm(config, { force: true });
-    for (const f of await readdir(outDir).catch(() => [])) if (/\.(png|jpe?g)$/i.test(f)) await rename(join(outDir, f), join(run.logDir, `${label}-${f}`));
+    for (const f of await readdir(outDir).catch(() => [])) {
+      if (/\.(png|jpe?g)$/i.test(f)) await writeFile(join(run.logDir, `${label}-${f}`), readAgentFile(join(outDir, f)));
+    }
     await rm(outDir, { recursive: true, force: true });
   };
   return { config, collect };
@@ -819,7 +820,7 @@ async function changedTests(repos: RepoCheckout[], checks: Check[]): Promise<{ p
     // Named from the workspace (the repository's folder first), so a test in another repository never stands in for it.
     for (const name of names) {
       const path = `${r.role}/${name}`;
-      if (named.some((f) => samePath(path, f))) out.push({ path, text: await readFile(join(r.work.dir, name), 'utf8').catch(() => '') });
+      if (named.some((f) => samePath(path, f))) out.push({ path, text: (() => { try { return readAgentFile(join(r.work.dir, name)).toString('utf8'); } catch { return ''; } })() });
     }
   }
   return out;

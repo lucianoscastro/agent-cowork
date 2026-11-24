@@ -1,12 +1,12 @@
-import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SECRETS } from '../config.ts';
 import { TOOLS_TOKEN_ENV } from '../databases.ts';
 import { getSecret } from '../db.ts';
 import { env } from '../env.ts';
-import { log, safeEnv } from '../sh.ts';
+import { readAgentFile, spawnAgent } from '../isolation.ts';
+import { log } from '../sh.ts';
 import type { ProviderRequest, ProviderResult } from './index.ts';
 import { authMethod, homes } from './index.ts';
 import { codexLimits, codexSessionLimits, recordLimits } from './limits.ts';
@@ -34,13 +34,13 @@ export const fromAppServer = (r: AppLimits) => {
  */
 export async function refreshCodexLimits(): Promise<void> {
   if (authMethod('codex') === 'api-key' || !existsSync(join(homes.codex, 'auth.json'))) return;
-  const child = spawn('codex', ['app-server'], { cwd: env.paths.work, env: safeEnv(credentials()), stdio: ['pipe', 'pipe', 'ignore'] });
+  const child = spawnAgent('codex', ['app-server'], { cwd: env.paths.work, env: credentials(), stdio: ['pipe', 'pipe', 'ignore'] });
   try {
     const result = await new Promise<{ rateLimits?: AppLimits }>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('no answer in 20 s')), 20_000);
       let buffer = '';
       child.on('error', reject);
-      child.stdout.on('data', (chunk: Buffer) => {
+      child.stdout!.on('data', (chunk: Buffer) => {
         buffer += chunk.toString();
         for (const line of buffer.split('\n').slice(0, -1)) {
           let msg: { id?: number; result?: { rateLimits?: AppLimits }; error?: { message?: string } };
@@ -56,7 +56,7 @@ export async function refreshCodexLimits(): Promise<void> {
         }
         buffer = buffer.slice(buffer.lastIndexOf('\n') + 1);
       });
-      child.stdin.write(
+      child.stdin!.write(
         [
           { jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'agentcowork', version: '1' } } },
           { jsonrpc: '2.0', method: 'initialized' },
@@ -89,10 +89,12 @@ export function strictSchema(schema: unknown): unknown {
 }
 
 export async function runCodex<T>(req: ProviderRequest): Promise<ProviderResult<T>> {
-  const schemaFile = join(req.run.logDir, `${req.label}.schema.json`);
-  const outFile = join(req.run.logDir, `${req.label}.out.json`);
+  // In the call's folder: Codex runs as the agents' user, which cannot reach the run's logs.
+  const schemaFile = join(req.home!, 'schema.json');
+  const outFile = join(req.home!, 'answer.json');
   const transcript = req.run.transcript(req.label);
-  await writeFile(schemaFile, JSON.stringify(strictSchema(req.schema)));
+  // New files only: an agent's leftover process can write the call's folder, and must not plant a link there.
+  await writeFile(schemaFile, JSON.stringify(strictSchema(req.schema)), { flag: 'wx' });
   const args = [
     'exec',
     '--json',
@@ -114,7 +116,8 @@ export async function runCodex<T>(req: ProviderRequest): Promise<ProviderResult<
   ];
   const out = await spawnStream('codex', args, {
     cwd: req.cwd,
-    env: safeEnv({ ...credentials(), ...(req.tools ? { [TOOLS_TOKEN_ENV]: req.tools.token } : {}) }),
+    env: { ...credentials(), ...(req.tools ? { [TOOLS_TOKEN_ENV]: req.tools.token } : {}) },
+    home: req.home!,
     input: req.prompt,
     signal: req.run.signal,
     transcript,
@@ -127,11 +130,12 @@ export async function runCodex<T>(req: ProviderRequest): Promise<ProviderResult<
   const usage = events.findLast((e) => e.type === 'turn.completed')?.usage as Record<string, number> | undefined;
   let text: string;
   try {
-    text = await readFile(outFile, 'utf8');
+    text = readAgentFile(outFile).toString('utf8');
   } catch {
     const failure = events.findLast((e) => e.type === 'turn.failed' || e.type === 'error');
     throw new Error(`codex exited ${out.code} without an answer: ${JSON.stringify(failure ?? out.stderr.slice(-500))}`.slice(0, 1000));
   }
+  await writeFile(join(req.run.logDir, `${req.label}.out.json`), text);
   try {
     // OpenAI counts cached input inside input_tokens.
     const cached = usage?.cached_input_tokens ?? 0;

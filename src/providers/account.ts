@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { readAgentFile } from '../isolation.ts';
 import { join } from 'node:path';
 import { type ProviderId, SECRETS } from '../config.ts';
 import { getSecret, getSetting, secretUpdatedAt } from '../db.ts';
@@ -34,7 +35,8 @@ export function jwtClaims(token: string): Record<string, unknown> {
 
 const readJson = (path: string): Record<string, any> | undefined => { // eslint-disable-line @typescript-eslint/no-explicit-any
   try {
-    return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : undefined;
+    // The runtimes' homes are the agents' to write: read as them, never through a link of theirs.
+    return existsSync(path) ? JSON.parse(readAgentFile(path, 1_000_000).toString('utf8')) : undefined;
   } catch {
     return undefined;
   }
@@ -81,5 +83,5 @@ export function accountInfo(id: ProviderId): AccountInfo | undefined {
   }
   if (!existsSync(homes.agyAccountMarker)) return undefined;
   const token = readJson(join(homes.agy, 'antigravity-cli', 'antigravity-oauth-token'));
-  return { email: token?.id_token_email, plan: 'Google account', since: readFileSync(homes.agyAccountMarker, 'utf8').trim() };
+  return { email: token?.id_token_email, plan: 'Google account', since: readAgentFile(homes.agyAccountMarker, 1000).toString('utf8').trim() };
 }

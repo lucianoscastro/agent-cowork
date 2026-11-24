@@ -84,7 +84,7 @@ SOFTWARE.
 
 ## ponytail
 
-The "Lazy Senior Developer Mindset" section of `defaults/AGENTS.md` is taken from
+The "Lazy Senior Developer Mindset" section of `defaults/AGENTS.md` is adapted from
 [ponytail](https://github.com/dietrichgebert/ponytail).
 
 MIT License

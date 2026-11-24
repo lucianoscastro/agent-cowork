@@ -1,21 +1,22 @@
-import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
+import { spawnAgent } from '../isolation.ts';
 
 export type StreamResult = { stdout: string; stderr: string; code: number | null };
 
 /**
- * Runs a runtime CLI, teeing stdout to a transcript file as it streams. Unlike execFile it keeps no
- * output-size ceiling on the transcript, and it kills the process when the run's signal aborts.
+ * Runs a runtime CLI as an agent process (spawnAgent, with `home` as HOME), teeing stdout to a transcript file as it
+ * streams. Unlike execFile it keeps no output-size ceiling on the transcript, and it kills the process when the run's
+ * signal aborts.
  * The runtime leads its own process group: when it exits, whatever it left running (a dev server, a watcher)
  * is killed with it, and never holds the output open or outlives the call.
  */
 export function spawnStream(
   cmd: string,
   args: string[],
-  opts: { cwd: string; env: NodeJS.ProcessEnv; input?: string; signal: AbortSignal; transcript: string },
+  opts: { cwd: string; env: NodeJS.ProcessEnv; home: string; input?: string; signal: AbortSignal; transcript: string },
 ): Promise<StreamResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, signal: opts.signal, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    const child = spawnAgent(cmd, args, { cwd: opts.cwd, env: opts.env, home: opts.home, signal: opts.signal, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
     // On exit, and at once on an abort: a runtime that ignores the signal's SIGTERM must not keep its group alive.
     // ponytail: a group left empty at exit frees its id; a new group could take it in the microseconds before this kill.
     const killGroup = () => {
@@ -30,12 +31,12 @@ export function spawnStream(
     const file = createWriteStream(opts.transcript, { flags: 'a' });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout!.on('data', (chunk: Buffer) => {
       file.write(chunk);
       // ponytail: keeps the whole stdout in memory for parsing; runtimes print a few MB at most per call.
       stdout += chunk.toString('utf8');
     });
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr!.on('data', (chunk: Buffer) => {
       stderr = (stderr + chunk.toString('utf8')).slice(-20_000);
     });
     child.on('error', (err) => {
@@ -48,8 +49,8 @@ export function spawnStream(
     });
     // A runtime that exits before reading its prompt (bad flag, no credentials) fails this write with EPIPE;
     // unhandled it would crash the process, while the exit code and stderr already report the failure.
-    child.stdin.on('error', () => {});
-    child.stdin.end(opts.input ?? '');
+    child.stdin!.on('error', () => {});
+    child.stdin!.end(opts.input ?? '');
   });
 }
 

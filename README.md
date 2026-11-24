@@ -54,7 +54,7 @@ A project can also list **databases** (SQL Server, PostgreSQL or MongoDB), each 
 | Gates, not trust | The platform runs verification itself. An independent reviewer checks plans and diffs, and the lead cannot dismiss it: disagreements park the run for a human. Every loop has a round limit. |
 | Edges as code | Runtimes get an allow-listed environment with **only their own credential**: never the GitHub or Jira tokens or a database URL, which only the orchestrator holds. Reviews run read-only. Repository hooks and MCP configs are ignored. |
 | Humans own decisions | The developer agent never merges. Questions go to the card in one batch, and the agent resumes when someone answers. |
-| Isolation | One container per company, one worktree per run. Read-only root filesystem, no Linux capabilities, `no-new-privileges`, non-root user. |
+| Isolation | One container per company, one worktree per run. Read-only root filesystem, `no-new-privileges`. Agents and the repositories' commands run as their own Linux user, with no capability and no access to the platform's secrets, database or logs, and reach the network only through the platform's proxy, to allowed hosts (General → Network). |
 | Kill switch | Any run, or all runs of an agent, can be stopped from the UI. Every action is in the audit log. |
 
 ## Quick start
@@ -108,6 +108,8 @@ Only bootstrap settings live in the env file. Everything else is stored in the d
 | `/backups` (bind) | Daily online backups of `db`, `auth` and the brains, keeping 7 days | — |
 | `/overrides` (bind, read-only, optional) | Replacements for the shipped instructions, skills and prompts | — |
 
+An older compose file (no `user: root` and `cap_add`) still starts, as `node`: agents then share the platform's user, and no firewall holds them to the network proxy (tools that use the proxy still meet its list; a program that ignores it reaches any host). **Setup → General → Network** says so. Copy the hardening lines of [`compose.example.yaml`](compose.example.yaml) to isolate them. On the first start with them, the platform opens the checkouts, the package caches and the runtime logins to the agents' group (uid 1001) and closes its own folders to everyone else.
+
 ## Instructions, skills and prompts
 
 The image ships defaults, versioned in [`defaults/`](defaults):
@@ -118,7 +120,7 @@ The image ships defaults, versioned in [`defaults/`](defaults):
 | `defaults/skills/` | `code-rules`, `review-code`, `tdd-workflow`, `systematic-debugging`, `spec-writing`, `browser-check`, `backend-patterns`, `frontend-patterns`, `design-system`, `ui-taste`, `git-workflow`, `codebase-onboarding`, and the audit skills `check-pre-deploy`, `check-privacy`, `check-performance`, `check-reliability`, `check-test-gaps`, `check-code-health`, `check-dependencies`, `check-accessibility` |
 | `defaults/prompts/` | SCOPED prompts (Scope, Context, Operations, Plan B, Edges, Done), one folder per agent: `approver/review`, `dependabot/assess`, `developer/{plan, review-plan, implement, fix, review-diff, address-review, follow-up}`, `auditor/audit` (one prompt for every audit category, pointed at its skill), `sentinel/{reproduce, explore}`, `documenter/document`, `brain/learn`, plus the subagents in `developer/agents/`. |
 
-To replace any of them, mount your own file or folder read-only at the same path under `/overrides`, for example `./overrides/prompts/approver/review.md:/overrides/prompts/approver/review.md:ro`. The UI shows whether each item is the **default** or a **custom mount**. By design, they cannot be edited in the UI. Files must be readable by uid 1000.
+To replace any of them, mount your own file or folder read-only at the same path under `/overrides`, for example `./overrides/prompts/approver/review.md:/overrides/prompts/approver/review.md:ro`. The UI shows whether each item is the **default** or a **custom mount**. By design, they cannot be edited in the UI. Files must be readable by uid 1000 and, for instructions and skills, by the agents' uid 1001 (readable by all, for example).
 
 ## Admin UI
 

@@ -92,10 +92,41 @@ const LANGUAGE_CODES = Object.keys(LANGUAGES) as Language[];
 /** The language name agents are told to write in. */
 export const outputLanguage = (): string => LANGUAGES[read('general').language] ?? LANGUAGES['en-US'];
 
+/**
+ * Hosts agents reach by default through the network proxy (egress.ts): the runtimes' APIs and logins, GitHub downloads,
+ * and the package registries of the stacks the image ships.
+ */
+export const DEFAULT_HOSTS = [
+  'api.anthropic.com',
+  'console.anthropic.com',
+  'platform.claude.com',
+  'claude.ai',
+  'chatgpt.com',
+  'auth.openai.com',
+  'api.openai.com',
+  '*.googleapis.com',
+  'github.com',
+  'codeload.github.com',
+  '*.githubusercontent.com',
+  'registry.npmjs.org',
+  'registry.yarnpkg.com',
+  'nodejs.org',
+  '*.nuget.org',
+  'pypi.org',
+  'files.pythonhosted.org',
+  'cdn.playwright.dev',
+  'playwright.download.prss.microsoft.com',
+  'playwright.azureedge.net',
+];
+
+/** An allowed-hosts entry: a host name or address, `*.` and a domain (its subdomains), or `*` (any host). */
+export const HOST_ENTRY = /^(\*|(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*|\[?[0-9a-f:.]+\]?)$/i;
+
 export type Settings = {
   // fallback: a call that hits a usage limit moves on to the next provider (see fallbackOrder).
   // runTokens: a run that uses more tokens stops and goes to the Inbox (0: no limit).
-  general: { language: Language; pollSeconds: number; fallback: boolean; runTokens: number };
+  // allowedHosts: where agents may reach through the network proxy (egress.ts); `*` lets them reach anywhere.
+  general: { language: Language; pollSeconds: number; fallback: boolean; runTokens: number; allowedHosts: string[] };
   github: { gitName: string; gitEmail: string };
   // readyJql: the cards any agent may take from a board (e.g. a status); each agent adds its own label.
   // The card's way through the board, the same for every agent that takes cards (a transition or status name; empty
@@ -190,7 +221,7 @@ export const NOTIFY_EVENTS = ['inbox', 'pr', 'limit', 'merged'] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 
 export const DEFAULTS: Settings = {
-  general: { language: 'en-US', pollSeconds: 300, fallback: true, runTokens: 0 },
+  general: { language: 'en-US', pollSeconds: 300, fallback: true, runTokens: 0, allowedHosts: DEFAULT_HOSTS },
   github: { gitName: 'agentCowork', gitEmail: '' },
   jira: { url: '', email: '', readyJql: 'statusCategory != Done', startTransition: 'In Progress', blockedTransition: 'Blocked', reviewTransition: '', readyTransition: '', assign: true, worklog: false },
   notifications: { uiUrl: '', events: { inbox: true, pr: true, limit: true, merged: false } },
@@ -580,6 +611,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           pollSeconds: int(o, 'pollSeconds', key, 30, 86_400),
           fallback: o.fallback === undefined ? true : bool(o, 'fallback', key),
           runTokens: o.runTokens === undefined ? 0 : int(o, 'runTokens', key, 0, 1_000_000_000),
+          allowedHosts: o.allowedHosts === undefined ? DEFAULT_HOSTS : strings(o, 'allowedHosts', key, HOST_ENTRY).map((h) => h.toLowerCase()),
         };
       case 'github':
         return { gitName: str(o, 'gitName', key, { required: true, max: 100 }), gitEmail: str(o, 'gitEmail', key, { max: 200 }) };

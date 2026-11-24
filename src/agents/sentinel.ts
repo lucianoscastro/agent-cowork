@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { envSecretName, hostOf, outputLanguage, parseTestVars, type Project, type RepoEnvironment, read } from '../config.ts';
 import { getSecret, Items } from '../db.ts';
 import { env } from '../env.ts';
 import { gh, ghJson } from '../integrations/github.ts';
+import { agentDir, readAgentFile } from '../isolation.ts';
 import * as jira from '../integrations/jira.ts';
 import { brainContext, learning } from '../brain.ts';
 import { playwrightConfig } from '../providers/browser.ts';
@@ -276,7 +276,7 @@ async function testRepo(run: Run, project: Project, repo: string, target: RepoEn
 /** Runs the suite (or one test, through extra arguments) with the platform's own report, and reads it. */
 async function runSuite(ctx: Context, extraArgs: string, label: string, timeoutMs: number): Promise<TestResult[] | undefined> {
   const suite = ctx.suite!;
-  const reportDir = await mkdtemp(join(tmpdir(), 'sentinel-report-'));
+  const reportDir = agentDir('report');
   const report = join(reportDir, suite.reportFormat === 'junit' ? 'report.xml' : 'report.json');
   try {
     const env = { ...ctx.vars, ...Object.fromEntries(suite.reportEnv.map((n) => [n, report])) };
@@ -284,7 +284,7 @@ async function runSuite(ctx: Context, extraArgs: string, label: string, timeoutM
     const command = [suite.runCommand, extraArgs, args].filter(Boolean).join(' ');
     const { tail } = await streamCommand(ctx.run, ctx.run.transcript(label), label, command, ctx.dir, { env, timeoutMs });
     // A JSON reporter without a file setting prints to the output: take the JSON from there.
-    const text = existsSync(report) ? readFileSync(report, 'utf8') : suite.reportFormat === 'playwright-json' ? jsonFromOutput(ctx.run.transcript(label)) : undefined;
+    const text = existsSync(report) ? readAgentFile(report).toString('utf8') : suite.reportFormat === 'playwright-json' ? jsonFromOutput(ctx.run.transcript(label)) : undefined;
     if (!text) {
       ctx.run.event('warn', `No report from \`${command}\`: ${tail.slice(-300)}`);
       return undefined;
@@ -322,7 +322,7 @@ const slug = (s: string) => s.replace(/[^\w.-]+/g, '_').slice(0, 60);
 /** Finds a test's source file in the checkout: as reported, or by its name further down. */
 function sourceOf(ctx: Context, test: TestResult): string | undefined {
   for (const candidate of [join(ctx.dir, test.file), join(ctx.dir, 'tests', test.file), join(ctx.dir, 'e2e', test.file)]) {
-    if (existsSync(candidate)) return readFileSync(candidate, 'utf8');
+    if (existsSync(candidate)) return readAgentFile(candidate).toString('utf8');
   }
   return undefined;
 }
@@ -567,50 +567,61 @@ export async function createExplorationCard(key: string, dryRun: boolean): Promi
 const evidenceType = (f: string) =>
   f.endsWith('.png') ? 'image/png' : f.endsWith('.jpeg') || f.endsWith('.jpg') ? 'image/jpeg' : f.endsWith('.har') ? 'application/json' : f.endsWith('.log') ? 'text/plain' : '';
 
-/** Writes the browser tool's config (Playwright MCP): headless, this environment's origin only, secrets masked, HAR recorded. */
+/**
+ * Writes the browser tool's config (Playwright MCP): headless, this environment's origin only, secrets masked, HAR
+ * recorded. All of it in a folder of the call's that the agents' user (the browser's) can use; its `out` folder holds
+ * the evidence until collectEvidence moves it to the run's logs and removes the folder.
+ */
 function prepareBrowser(ctx: Context, label: string): { config: string; outDir: string; secretNames: string[] } {
-  const outDir = join(ctx.run.logDir, `${label}-browser`);
-  mkdirSync(outDir, { recursive: true });
+  const dir = agentDir('browser');
+  const outDir = join(dir, 'out');
+  mkdirSync(outDir);
   const secrets = flattenSecrets(ctx.secrets);
-  // The secrets file (test-user credentials, never platform tokens) lives in /tmp only for the call's duration.
-  const secretsFile = join(tmpdir(), `sentinel-${ctx.run.id}-${label}.env`);
-  writeFileSync(secretsFile, Object.entries(secrets).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join('\n'), { mode: 0o600 });
-  const browserConfig = join(tmpdir(), `sentinel-${ctx.run.id}-${label}.json`);
-  writeFileSync(browserConfig, JSON.stringify({ browser: { contextOptions: { recordHar: { path: join(outDir, 'session.har'), content: 'omit' } } } }));
-  const config = join(tmpdir(), `sentinel-${ctx.run.id}-${label}-mcp.json`);
+  // The secrets file (test-user credentials, never platform tokens) lives only for the call's duration.
+  const secretsFile = join(dir, 'secrets.env');
+  writeFileSync(secretsFile, Object.entries(secrets).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join('\n'), { mode: 0o640, flag: 'wx' });
+  const browserConfig = join(dir, 'browser.json');
+  writeFileSync(browserConfig, JSON.stringify({ browser: { contextOptions: { recordHar: { path: join(outDir, 'session.har'), content: 'omit' } } } }), { flag: 'wx' });
+  const config = join(dir, 'mcp.json');
   const origin = new URL(ctx.baseUrl).origin;
   const args = ['--allowed-origins', origin, '--secrets', secretsFile, '--config', browserConfig, '--console-level', 'warning', '--viewport-size', '1440x900'];
-  writeFileSync(config, playwrightConfig(outDir, args));
+  writeFileSync(config, playwrightConfig(outDir, args), { flag: 'wx' });
   return { config, outDir, secretNames: Object.keys(secrets) };
 }
 
-/** Screenshots and the HAR the browser tool saved, ready to attach. The call's temporary files go first. */
+/** Screenshots and the HAR the browser tool saved, ready to attach. The call's folder goes after. */
 function collectEvidence(ctx: Context, label: string, outDir: string): { name: string; type: string; data: Buffer }[] {
-  for (const suffix of ['.env', '.json', '-mcp.json']) rmSync(join(tmpdir(), `sentinel-${ctx.run.id}-${label}${suffix}`), { force: true });
+  try {
+    return evidence(ctx, label, outDir);
+  } finally {
+    rmSync(dirname(outDir), { recursive: true, force: true });
+  }
+}
+
+function evidence(ctx: Context, label: string, outDir: string): { name: string; type: string; data: Buffer }[] {
   if (!existsSync(outDir)) return [];
   const files: { name: string; type: string; data: Buffer }[] = [];
   for (const f of readdirSync(outDir)) {
-    const p = join(outDir, f);
-    if (!statSync(p).isFile()) continue;
     const type = evidenceType(f);
-    if (!type || statSync(p).size > MAX_ATTACHMENT_BYTES) continue;
+    if (!type) continue;
+    // Read as the agents' user (the browser's): a link it left there reaches nothing of the platform's.
+    let data: Buffer;
+    try {
+      data = readAgentFile(join(outDir, f), MAX_ATTACHMENT_BYTES);
+    } catch {
+      continue; // not a file, or too large
+    }
     // Flat in the run's folder too, so the run page lists them. Text evidence is cleaned of credentials first.
-    const flat = join(ctx.run.logDir, `${label}-${f}`);
     if (type === 'application/json' || type === 'text/plain') {
       const secrets = Object.values(flattenSecrets(ctx.secrets));
-      const text = readFileSync(p, 'utf8');
-      let clean: string;
       try {
-        clean = type === 'application/json' ? sanitizeHar(text, secrets) : maskSecrets(text, secrets);
+        data = Buffer.from(type === 'application/json' ? sanitizeHar(data.toString('utf8'), secrets) : maskSecrets(data.toString('utf8'), secrets));
       } catch {
         continue; // a HAR that cannot be read is not attached, rather than attached unclean
       }
-      writeFileSync(flat, clean);
-      rmSync(p, { force: true });
-    } else {
-      renameSync(p, flat);
     }
-    files.push({ name: `${label}-${f}`, type, data: readFileSync(flat) });
+    writeFileSync(join(ctx.run.logDir, `${label}-${f}`), data);
+    files.push({ name: `${label}-${f}`, type, data });
   }
   return files.slice(-6);
 }

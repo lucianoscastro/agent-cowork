@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync } from 'node:fs';
 import { cp, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { backup } from 'node:sqlite';
@@ -18,7 +18,10 @@ export function startBackups(): void {
   const once = async () => {
     try {
       const day = new Date().toISOString().slice(0, 10);
-      await backup(sql(), join(env.backupsDir, `db-${day}.sqlite`));
+      const dbCopy = join(env.backupsDir, `db-${day}.sqlite`);
+      await backup(sql(), dbCopy);
+      // The platform's alone, whoever owns the folder (the agents' user must never read it).
+      chmodSync(dbCopy, 0o600);
       // Replace today's copy whole: cp refuses to overwrite a link (codex/skills) left by an earlier start the same day.
       const authCopy = join(env.backupsDir, `auth-${day}`);
       await rm(authCopy, { recursive: true, force: true });

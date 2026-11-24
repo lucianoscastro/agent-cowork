@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import { NOTIFY_EVENTS, saveSection, type Sections, type SettingsResponse, type Stack, STACK_NAMES } from '../api';
 import { SecretInput, TestButton } from './Integrations';
-import { Button, Card, Field, Lines, Loading, Message, Num, PageHeader, Select, Text, Toggle, useAction, useFetch, useUnsaved } from '../ui';
+import { Badge, Button, Card, Field, Lines, Loading, Message, Num, PageHeader, Select, Text, Time, Toggle, useAction, useFetch, useUnsaved } from '../ui';
 
 export function General() {
   const t = useT();
@@ -12,6 +12,7 @@ export function General() {
   const [notifications, setNotifications] = useState<Sections['notifications']>();
   const action = useAction();
   const stackAction = useAction();
+  const networkAction = useAction();
   const notifyAction = useAction();
   useUnsaved(general, data?.sections.general);
   useUnsaved(stacks, data?.sections.stacks);
@@ -58,6 +59,44 @@ export function General() {
             Save
           </Button>
           <Message message={action.message} />
+        </div>
+      </Card>
+      <Card title="Network">
+        <p>
+          {data.isolation.userOff ? <Badge tone="warn">agents share the platform's user</Badge> : <Badge tone="ok">agents run as their own user</Badge>}{' '}
+          {data.isolation.firewallOff ? <Badge tone="warn">firewall off</Badge> : <Badge tone="ok">firewall on</Badge>}
+        </p>
+        {data.isolation.userOff && <p className="hint">{t("Agents can read the platform's data: {reason}.", { reason: data.isolation.userOff })}</p>}
+        {data.isolation.firewallOff && <p className="hint">{t('Agents can reach any host, past the list below: {reason}.', { reason: data.isolation.firewallOff })}</p>}
+        <p className="hint">
+          {t(
+            "Agents and the repositories' commands reach the network only through the platform, and only these hosts. One per line: a host (api.example.com), its subdomains (*.example.com), or * for any host. The hosts of the projects' test environments are allowed too.",
+          )}
+        </p>
+        <Field label="Allowed hosts">
+          <Lines value={general.allowedHosts} onChange={(allowedHosts) => setGeneral({ ...general, allowedHosts })} rows={10} />
+        </Field>
+        {data.isolation.blocked.length > 0 && (
+          <>
+            <h3>{t('Refused lately')}</h3>
+            <ul>
+              {data.isolation.blocked.map((b) => (
+                <li key={b.host}>
+                  <code>{b.host}</code> · {t('{n} times', { n: b.count })} · <Time iso={b.at} />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <div className="row">
+          <Button
+            variant="primary"
+            busy={networkAction.busy}
+            onClick={() => networkAction.run(async () => (await saveSection('general', { ...general, allowedHosts: general.allowedHosts.map((h) => h.trim()).filter(Boolean) }), reload()))}
+          >
+            Save
+          </Button>
+          <Message message={networkAction.message} />
         </div>
       </Card>
       <Card title="Notifications">

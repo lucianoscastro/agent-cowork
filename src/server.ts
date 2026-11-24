@@ -10,8 +10,10 @@ import { brainDir, brainSlug, deleteNote, listNotes, looksSecret, putNote, valid
 import { safeEqual, signSession, verifySession } from './crypto.ts';
 import { databaseUrl, probeDatabase } from './databases.ts';
 import { audit, auditLog, deleteSecret, getSecret, inboxItems, Items, itemsByStatus, secretNames, setSecret } from './db.ts';
+import { firewall, recentlyBlocked } from './egress.ts';
 import { env } from './env.ts';
 import { applyGithubEnv, testGithub } from './integrations/github.ts';
+import { isolationOff } from './isolation.ts';
 import { checkBoard, jiraStatus, testJira } from './integrations/jira.ts';
 import { providerStatus } from './providers/index.ts';
 import { auditDetail, createFindingCard, findingsOverview } from './agents/auditor.ts';
@@ -176,6 +178,8 @@ route('GET', '/api/settings', () => ({
   providers: Object.fromEntries(PROVIDERS.map((p) => [p, { ...providerStatus(p), account: accountInfo(p) }])),
   agents: Object.fromEntries(AGENTS.map((a) => [a, agentStatus(a)])),
   assets: assetsInfo(),
+  // How agents are kept apart from the platform: their own user, the firewall, and the hosts the proxy refused lately.
+  isolation: { userOff: isolationOff ?? null, firewallOff: firewall().reason ?? null, blocked: recentlyBlocked() },
 }));
 
 route('PUT', '/api/settings/:section', async ({ body, user }, [section]) => {

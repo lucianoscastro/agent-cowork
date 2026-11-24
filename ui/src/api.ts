@@ -130,7 +130,7 @@ export const NOTIFY_EVENTS: { id: NotifyEvent; label: string }[] = [
 ];
 
 export type Sections = {
-  general: { language: 'en-US' | 'pt-BR' | 'es-ES'; pollSeconds: number; fallback: boolean; runTokens: number };
+  general: { language: 'en-US' | 'pt-BR' | 'es-ES'; pollSeconds: number; fallback: boolean; runTokens: number; allowedHosts: string[] };
   github: { gitName: string; gitEmail: string };
   /** readyJql: the cards any agent may take from a board; each agent adds its own label. */
   jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; reviewTransition: string; readyTransition: string; assign: boolean; worklog: boolean };
@@ -213,6 +213,8 @@ export type SettingsResponse = {
     skills: { source: string; path: string };
     files: AssetFile[];
   };
+  /** Why agents share the platform's user, why the firewall is off (null: they are not), and hosts refused lately. */
+  isolation: { userOff: string | null; firewallOff: string | null; blocked: { host: string; count: number; at: string }[] };
 };
 
 export type AssetFile = { name: string; group: 'instructions' | 'prompts' | 'skills'; source: string };
