@@ -20,6 +20,8 @@ Audit the change made for Jira issue {{key}} ("{{summary}}") before it becomes a
 {{plan}}
 </plan>
 
+{{diffChecks}}
+
 {{spec}}
 
 {{brain}}
@@ -34,6 +36,7 @@ Audit the change made for Jira issue {{key}} ("{{summary}}") before it becomes a
 4. Apply the criteria of your `code-rules` and `review-code` skills when available.
 5. When the diff changes UI, judge it with `ui-taste` (System-bound: its checklist and its list of generated looks) and `check-accessibility`, and run the skill's scanner on the changed UI files. A generic or off-system look is a minor finding; an inaccessible control is major.
 6. Check the change against the repository rules listed above (instructions, documents, the specialist role that fits): a step that breaks one is a finding that names the rule.
+7. For each platform check listed above, decide whether the change justifies it (a test deleted with the feature it tested, a file the plan missed but the fix needs) or it is a finding.
 
 ## Plan B
 

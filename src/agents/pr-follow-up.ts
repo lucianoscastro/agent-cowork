@@ -4,20 +4,21 @@ import { join } from 'node:path';
 import { outputLanguage, type Project, read, repoFolder, verifyCommands } from '../config.ts';
 import type { Item, Items } from '../db.ts';
 import { env } from '../env.ts';
-import { gh, ghJson } from '../integrations/github.ts';
+import { gh, ghJson, PEOPLE } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
 import { BOT_MARK } from '../integrations/jira.ts';
 import { brainContext, learning } from '../brain.ts';
 import { runProvider } from '../providers/index.ts';
 import { withRun, type Run, type RunEnd } from '../runs.ts';
-import { checkout, log, removeCheckout, renderPrompt, run as sh, untrusted } from '../sh.ts';
+import { checkout, fetchBranches, log, pushBranch, removeCheckout, renderPrompt, run as sh, untrusted } from '../sh.ts';
+import { checkDiff, refusedPush } from './diff-policy.ts';
 import { BUILD_SCHEMA, type Built, describeRepo, NeedsInput, type RepoCheckout, verifyWithFixes } from './developer.ts';
 
 /** A PR the developer opened and follows until it is merged or closed. */
 export type WatchedPr = { repo: string; url: string; number: number; branch: string; base: string };
 
 type Author = { login: string; __typename: string } | null;
-type Note = { databaseId: number; body: string; author: Author; createdAt: string; url: string };
+type Note = { databaseId: number; body: string; author: Author; authorAssociation?: string; createdAt: string; url: string };
 type Thread = { id: string; isResolved: boolean; path: string; line: number | null; comments: { nodes: Note[] } };
 type CheckNode =
   | { __typename: 'CheckRun'; databaseId: number; name: string; status: string; conclusion: string | null; detailsUrl: string | null }
@@ -53,6 +54,11 @@ const FOLLOW_UP_SCHEMA = {
 
 const FAILED = new Set(['FAILURE', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'ERROR']);
 const ours = (n: Note) => n.body.includes(BOT_MARK);
+/**
+ * Who may steer the agent from a pull request: the repository's own people and the apps installed on it (review bots).
+ * Anyone else's comment is ignored: on a public repository anyone can comment.
+ */
+const trusted = (n: Note) => n.author?.__typename === 'Bot' || PEOPLE.includes(n.authorAssociation ?? '');
 
 /**
  * What still needs the developer on one PR. Exported for tests.
@@ -66,9 +72,9 @@ export function pendingWork(s: PrSnapshot, handledUntil: string, handledNotes: n
   // A thread comes back only when someone writes in it after the agent handled it.
   const threads = s.threads.filter((t) => {
     const last = t.comments.nodes.at(-1);
-    return !t.isResolved && last !== undefined && !ours(last) && !handledNotes.includes(last.databaseId);
+    return !t.isResolved && last !== undefined && !ours(last) && trusted(last) && !handledNotes.includes(last.databaseId);
   });
-  const comments = s.comments.filter((c) => c.createdAt > handledUntil && c.body.trim() && !ours(c) && c.author?.__typename === 'User');
+  const comments = s.comments.filter((c) => c.createdAt > handledUntil && c.body.trim() && !ours(c) && c.author?.__typename === 'User' && trusted(c));
   return { failing, running, conflict: s.mergeable === 'CONFLICTING', threads, comments };
 }
 
@@ -84,9 +90,9 @@ const SNAPSHOT_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
         ... on CheckRun { databaseId name status conclusion detailsUrl }
         ... on StatusContext { context state description targetUrl }
       } } } } } }
-      reviewThreads(first: 100) { nodes { id isResolved path line comments(first: 50) { nodes { databaseId body createdAt url author { login __typename } } } } }
-      comments(last: 100) { nodes { databaseId body createdAt url author { login __typename } } }
-      reviews(last: 50) { nodes { databaseId body createdAt url author { login __typename } } }
+      reviewThreads(first: 100) { nodes { id isResolved path line comments(first: 50) { nodes { databaseId body createdAt url authorAssociation author { login __typename } } } } }
+      comments(last: 100) { nodes { databaseId body createdAt url authorAssociation author { login __typename } } }
+      reviews(last: 50) { nodes { databaseId body createdAt url authorAssociation author { login __typename } } }
     }
   }
 }`;
@@ -216,7 +222,7 @@ export const peopleCommits = (commits: PrCommit[], agentEmail: string) =>
  * last handled, and in each review thread what came after the last comment the agent handled. Exported for tests.
  */
 export function saidSince(s: PrSnapshot, handledUntil: string, handledNotes: number[]): string[] {
-  const person = (n: Note) => n.author?.__typename === 'User' && !ours(n) && n.body.trim() !== '' && n.createdAt > handledUntil;
+  const person = (n: Note) => n.author?.__typename === 'User' && trusted(n) && !ours(n) && n.body.trim() !== '' && n.createdAt > handledUntil;
   return [
     ...s.comments.filter(person).map((n) => `- ${n.author!.login}: ${untrusted(n.body.slice(0, 1500))}`),
     ...s.threads.flatMap((t) => {
@@ -307,8 +313,8 @@ async function attend(run: Run, key: string, project: Project, work: { pr: Watch
     // People's review comments are the strongest lesson: what this team expects from a change.
     const said = work.flatMap(({ pr, pending }) =>
       [...pending.threads.flatMap((t) => t.comments.nodes.map((n) => ({ n, where: `${t.path}${t.line ? `:${t.line}` : ''}` }))), ...pending.comments.map((n) => ({ n, where: '' }))]
-        .filter(({ n }) => n.author?.__typename === 'User' && !ours(n))
-        .map(({ n, where }) => `- ${n.author!.login} on ${pr.repo}#${pr.number}${where ? ` (${where})` : ''}: ${n.body.slice(0, 1500)}`),
+        .filter(({ n }) => n.author?.__typename === 'User' && trusted(n) && !ours(n))
+        .map(({ n, where }) => `- ${n.author!.login} on ${pr.repo}#${pr.number}${where ? ` (${where})` : ''}: ${untrusted(n.body.slice(0, 1500))}`),
     );
     if (said.length) signals.push(`People reviewed the pull requests:\n${said.join('\n')}`);
     const lead = (label: string, prompt: string) =>
@@ -336,10 +342,19 @@ async function attend(run: Run, key: string, project: Project, work: { pr: Watch
     if (failure) return await ask(run, work, `Build or tests still fail locally after ${cfg.limits.verify} fix attempts, so nothing was pushed.\n\n${failure.slice(-1500)}`);
 
     run.stage('Push');
+    // The platform's checks on what this push adds to each PR, all before any push: CI definitions and credentials stop it.
+    const blocked: string[] = [];
+    for (const r of repos) {
+      await fetchBranches(r.work, r.pr.repo, [r.pr.base, r.pr.branch]);
+      const checked = await checkDiff(r.work.dir, `refs/remotes/origin/${r.pr.base}`, { since: `refs/remotes/origin/${r.pr.branch}`, folder: repoFolder(r.pr.repo) });
+      if (checked.blocked.length || checked.warnings.length) run.event('warn', `Platform checks on ${r.pr.url}`, checked);
+      blocked.push(...checked.blocked);
+    }
+    if (blocked.length) return await ask(run, work, refusedPush(blocked));
     for (const r of repos) {
       const ahead = Number(await sh('git', ['rev-list', '--count', `refs/remotes/origin/${r.pr.branch}..HEAD`], { cwd: r.work.dir }));
       if (ahead > 0) {
-        await sh('git', ['push', 'origin', `HEAD:refs/heads/${r.pr.branch}`], { cwd: r.work.dir });
+        await pushBranch(r.work, r.pr.repo, r.pr.branch);
         run.event('artifact', `Pushed ${ahead} commit(s) to ${r.pr.url}`);
       }
     }
@@ -360,17 +375,17 @@ async function ask(run: Run, work: { pr: WatchedPr }[], text: string): Promise<R
   return { status: 'waiting', summary: text };
 }
 
-/** The prompt's view of one PR: failing checks with their logs, open threads and new comments, each with an id. */
-async function describeWork({ pr, pending }: { pr: WatchedPr; pending: PendingWork }): Promise<string> {
+/** The prompt's view of one PR: failing checks with their logs, open threads and new comments, each with an id. Exported for tests. */
+export async function describeWork({ pr, pending }: { pr: WatchedPr; pending: PendingWork }): Promise<string> {
   const folder = repoFolder(pr.repo);
   const parts = [`### ${pr.url} (folder \`${folder}/\`, branch \`${pr.branch}\`)`];
   if (pending.conflict) parts.push(`- The branch conflicted with \`${pr.base}\`. The platform merged \`origin/${pr.base}\` into it: resolve every conflict marker.`);
   for (const c of pending.failing) parts.push(await failureDetails(pr.repo, c));
   for (const t of pending.threads) {
-    const conversation = t.comments.nodes.map((n) => `  - ${n.author?.login ?? 'unknown'}: ${n.body.trim()}`).join('\n');
+    const conversation = t.comments.nodes.filter(trusted).map((n) => `  - ${n.author?.login ?? 'unknown'}: ${untrusted(n.body.trim())}`).join('\n');
     parts.push(`- Review thread \`thread:${pr.repo}#${pr.number}:${t.id}:${t.comments.nodes.at(-1)!.databaseId}\` on \`${folder}/${t.path}${t.line ? `:${t.line}` : ''}\`:\n${conversation}`);
   }
-  for (const c of pending.comments) parts.push(`- Comment \`comment:${pr.repo}#${pr.number}:${c.databaseId}\` by ${c.author?.login ?? 'unknown'}:\n  ${c.body.trim()}`);
+  for (const c of pending.comments) parts.push(`- Comment \`comment:${pr.repo}#${pr.number}:${c.databaseId}\` by ${c.author?.login ?? 'unknown'}:\n  ${untrusted(c.body.trim())}`);
   return parts.join('\n');
 }
 

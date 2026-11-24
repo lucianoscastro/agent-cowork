@@ -161,7 +161,7 @@ async function specify(run: Run, key: string, project: Project, dryRun: boolean,
     const vars: Record<string, string> = {
       key,
       project: project.name,
-      summary: issue.fields.summary,
+      summary: untrusted(issue.fields.summary),
       description: untrusted(description),
       comments: untrusted(jira.formatComments(issue.fields.comment.comments)),
       language: outputLanguage(),

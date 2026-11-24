@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type ModelChoice, outputLanguage, type Project, type ProviderId, read, repoFolder, type Reviewer, verifyCommands } from '../config.ts';
+import { type ModelChoice, outputLanguage, type Project, type ProviderId, read, repoFolder, type Reviewer, type Settings, verifyCommands } from '../config.ts';
 import { Items, MAX_ATTEMPTS } from '../db.ts';
 import { env } from '../env.ts';
 import { actionsLinks, failedLogTail, gh, ghJson } from '../integrations/github.ts';
@@ -10,7 +10,8 @@ import * as jira from '../integrations/jira.ts';
 import { playwrightConfig } from '../providers/browser.ts';
 import { runProvider, type Subagent, TOOL_RUNTIMES, toolsStatus } from '../providers/index.ts';
 import { withRun, type Run, type RunEnd } from '../runs.ts';
-import { type Checkout, checkout, forEachLimit, log, removeCheckout, renderPrompt, run as sh, untrusted } from '../sh.ts';
+import { type Checkout, checkout, fetchBranches, forEachLimit, log, pushBranch, removeCheckout, renderPrompt, run as sh, untrusted } from '../sh.ts';
+import { checkDiff, checksSection, refusedPush } from './diff-policy.ts';
 import { fixBranch } from './dependabot.ts';
 import { followUpTasks, type WatchedPr } from './pr-follow-up.ts';
 import { runVerify } from './verify.ts';
@@ -40,7 +41,7 @@ export type Review = { verdict: 'approve' | 'changes'; findings: Finding[]; summ
  */
 type Kind = 'code' | 'promote' | 'answer' | 'handoff' | 'needs_tools';
 export type Promotion = { repo: string; from: string; to: string };
-type Plan = { status: 'ready' | 'needs_input'; kind: Kind; plan: string; questions: string; promotions: Promotion[] };
+type Plan = { status: 'ready' | 'needs_input'; kind: Kind; plan: string; files: string[]; tests: string[]; questions: string; promotions: Promotion[] };
 export type Built = { status: 'done' | 'needs_input'; title: string; summary: string };
 type Addressed = { status: 'done' | 'disputed' | 'needs_input'; disputes: string[]; summary: string };
 
@@ -50,13 +51,16 @@ const PLAN_SCHEMA = {
     status: { type: 'string', enum: ['ready', 'needs_input'] },
     kind: { type: 'string', enum: ['code', 'promote', 'answer', 'handoff', 'needs_tools'] },
     plan: { type: 'string' },
+    // What the plan changes and the tests it adds, as `folder/path`: the platform's checks compare the change with them.
+    files: { type: 'array', items: { type: 'string' } },
+    tests: { type: 'array', items: { type: 'string' } },
     questions: { type: 'string' },
     promotions: {
       type: 'array',
       items: { type: 'object', properties: { repo: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' } }, required: ['repo', 'from', 'to'] },
     },
   },
-  required: ['status', 'kind', 'plan', 'questions', 'promotions'],
+  required: ['status', 'kind', 'plan', 'files', 'tests', 'questions', 'promotions'],
 };
 export const REVIEW_SCHEMA = {
   type: 'object',
@@ -199,8 +203,18 @@ async function handle(items: Items, key: string, project: Project, dryRun: boole
   }
 }
 
-async function work(run: Run, key: string, project: Project, dryRun: boolean, signals: string[]): Promise<RunEnd> {
-  const cfg = read('agents.developer');
+/**
+ * A closed card built again for the golden set (src/golden.ts), always in dry run: from the commit its first build
+ * started from, with only what the card said before any build (no comments, no plan attached, no brain), on its own
+ * branch and without checkpoints, and with the settings given (the models). `evaluate` scores the build before the
+ * checkouts go.
+ */
+export type Replay = { bases: Record<string, string>; settings: Partial<Settings['agents.developer']>; evaluate: (run: Run, repos: RepoCheckout[]) => Promise<void> };
+
+export const replayCard = (run: Run, key: string, project: Project, replay: Replay) => work(run, key, project, true, [], replay);
+
+async function work(run: Run, key: string, project: Project, dryRun: boolean, signals: string[], replay?: Replay): Promise<RunEnd> {
+  const cfg = { ...read('agents.developer'), ...replay?.settings };
   const language = outputLanguage();
   const issue = await jira.getIssue(key);
   if (!dryRun) {
@@ -222,7 +236,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
 
   run.stage('Intake');
   const workspace = join(env.paths.work, 'worktrees', `${key}-${randomUUID().slice(0, 8)}`);
-  const branch = `ai/${key}`;
+  const branch = replay ? `golden/${key}` : `ai/${key}`;
   const repos: RepoCheckout[] = [];
   // The project's databases: reads in every call, script validation (always rolled back) in the calls that change code.
   const databases = await grantDatabases(run, 'developer', project);
@@ -236,14 +250,14 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       const base =
         (fix?.repo === repo ? fix.branch : '') ||
         project.baseBranch || cfg.baseBranch || (await gh(['repo', 'view', repo, '--json', 'defaultBranchRef', '-q', '.defaultBranchRef.name']));
-      const work = await checkout(repo, [`+refs/heads/${base}:refs/remotes/origin/${base}`], `refs/remotes/origin/${base}`, {
+      const work = await checkout(repo, [`+refs/heads/${base}:refs/remotes/origin/${base}`], replay?.bases[repo] ?? `refs/remotes/origin/${base}`, {
         branch,
         dir: join(workspace, role),
       });
       repos.push({ role, repo, base, verify, work });
     }
     // The card's Markdown attachments: the Product Manager's spec documents, or people's notes.
-    const docs = await jira.saveMarkdownAttachments(key, join(workspace, 'spec'));
+    const docs = await jira.saveMarkdownAttachments(key, join(workspace, 'spec'), (name) => !replay || name !== jira.PLAN_DOC);
     // A card under a discovery: its parent's discovery and prototypes, the look people approved before the card existed.
     const discovery = await jira.saveDiscovery(issue, join(workspace, 'discovery'));
     const spec = new Map(await Promise.all(docs.filter((n) => jira.SPEC_DOC.test(n)).map(async (n) => [n, await readFile(join(workspace, 'spec', n), 'utf8')] as const)));
@@ -272,8 +286,9 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       return { status: 'done', summary: `sent back to the Product Manager: ${text}`, data: { handedBack: true } };
     };
     const description = jira.adfToText(issue.fields.description);
-    const comments = jira.formatComments(issue.fields.comment.comments);
-    const people = issue.fields.comment.comments.filter((c) => !jira.adfToText(c.body).trimStart().startsWith(BOT_MARK));
+    const said = replay ? [] : issue.fields.comment.comments;
+    const comments = jira.formatComments(said);
+    const people = said.filter((c) => !jira.adfToText(c.body).trimStart().startsWith(BOT_MARK));
     if (people.length) signals.push(`People wrote on card ${key}:\n${jira.formatComments(people).slice(-6000)}`);
     // A Claude lead building a project with a React repository checks its UI changes in a browser, on localhost.
     const ui = cfg.browserCheck && cfg.lead.provider === 'claude' && Object.values(project.repos).some((r) => r.stack === 'react');
@@ -281,7 +296,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       key,
       project: project.name,
       repos: repos.map(describeRepo).join('\n'),
-      summary: issue.fields.summary,
+      summary: untrusted(issue.fields.summary),
       description: untrusted(description),
       comments: untrusted(comments),
       toolchain: await toolchain(),
@@ -289,7 +304,8 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       language,
       reviewContext: '',
       plan: '',
-      brain: await brainContext(project.name, workspace, `${issue.fields.summary}\n${description}`, { cwd: workspace, dirs: repos.map((r) => r.work.dir) }),
+      diffChecks: '',
+      brain: await brainContext(replay ? undefined : project.name, workspace, `${issue.fields.summary}\n${description}`, { cwd: workspace, dirs: repos.map((r) => r.work.dir) }),
       databases: databasesPrompt(project),
       spec: specBrief('spec', docs, discovery),
       task: '',
@@ -297,6 +313,11 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     };
     const lead = (label: string, prompt: string, schema: object, mode: 'read-only' | 'write', subagents?: Record<string, Subagent>, browserIfClaude?: string) =>
       runProvider(cfg.lead.provider, { run, label, prompt, schema, cwd: workspace, mode, model: cfg.lead.model, subagents, browserIfClaude, tools: mode === 'write' ? databases?.write : databases?.read });
+    // The plan on its own model when one is set: where a stronger model pays off most.
+    const planner = (label: string) =>
+      renderPrompt('developer/plan', vars).then((prompt) =>
+        runProvider(cfg.lead.provider, { run, label, prompt, schema: PLAN_SCHEMA, cwd: workspace, mode: 'read-only', model: cfg.planModel || cfg.lead.model, tools: databases?.read }),
+      );
     const reviewers = reviewPanel(run, cfg, workspace, databases?.read);
     /**
      * The plan, on a runtime without the database tools, says the card needs them: it waits, Blocked, and resumes on its
@@ -315,13 +336,13 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
 
     // --- Plan, with a bounded plan review by the independent reviewer ---
     run.stage('Plan');
-    let planned = await lead('plan-1', await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only');
+    let planned = await planner('plan-1');
     let plan = planned.output as Plan;
     for (let round = 1; ; round++) {
       if (plan.status === 'needs_input') return await ask(plan.questions);
       if (plan.kind === 'needs_tools') return await waitForTools(plan.plan, planned.provider);
       // The reviewer judges the kind too: a promotion or a handoff must not stand in for a code change.
-      vars.plan = plan.kind === 'code' ? plan.plan : `Kind: ${plan.kind}${plan.promotions.map((p) => `\n- promote ${p.repo}: ${p.from} → ${p.to}`).join('')}\n\n${plan.plan}`;
+      vars.plan = plan.kind === 'code' ? planText(plan) : `Kind: ${plan.kind}${plan.promotions.map((p) => `\n- promote ${p.repo}: ${p.from} → ${p.to}`).join('')}\n\n${plan.plan}`;
       if (round > cfg.limits.planReview || !reviewers.size) break;
       run.stage(`Plan review ${round}`);
       const review = await reviewers.review(`review-plan-${round}`, await renderPrompt('developer/review-plan', vars));
@@ -336,7 +357,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       }
       signals.push(`The plan reviewer asked for changes (the plan was revised):\n${formatFindings(review.findings)}`);
       vars.reviewContext = `The independent reviewer asked for changes to your previous plan. Revise it.\n\n<previous_plan>\n${plan.plan}\n</previous_plan>\n\n<review_findings>\n${formatFindings(review.findings)}\n</review_findings>`;
-      planned = await lead(`plan-${round + 1}`, await renderPrompt('developer/plan', vars), PLAN_SCHEMA, 'read-only');
+      planned = await planner(`plan-${round + 1}`);
       plan = planned.output as Plan;
     }
 
@@ -370,7 +391,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
 
     // The plan goes on the card for people, in place of the one before: what is being built, and why.
     if (!dryRun) {
-      const doc = `# Plan for ${key}: ${issue.fields.summary}\n\n> agentCowork Developer, run #${run.id}, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Replaced by each new plan; the pull requests show what was built.\n\n${plan.plan}\n`;
+      const doc = `# Plan for ${key}: ${issue.fields.summary}\n\n> agentCowork Developer, run #${run.id}, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC. Replaced by each new plan; the pull requests show what was built.\n\n${planText(plan)}\n`;
       await jira
         .replaceAttachments(key, [{ name: jira.PLAN_DOC, type: 'text/markdown', data: Buffer.from(doc) }])
         .then((left) => left.length > 0 && run.event('warn', 'An older plan stayed on the card', left.join(', ')))
@@ -431,7 +452,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       jira.formatComments(people),
       ...(await Promise.all((discovery?.files ?? []).map((f) => readFile(join(workspace, 'discovery', f), 'utf8')))),
     ];
-    const refs = stepwise ? taskFingerprints(spec, checks, tasks, context).map((fp, i) => checkpointRef(key, tasks[i], fp)) : [];
+    const refs = stepwise && !replay ? taskFingerprints(spec, checks, tasks, context).map((fp, i) => checkpointRef(key, tasks[i], fp)) : [];
     const resumed = await resumeBuild(repos, refs);
     if (resumed) run.event('info', `Resumed after ${tasks.slice(0, resumed).map((t) => t.id).join(', ')}, built and verified in an earlier run`);
     let failure: string | undefined;
@@ -470,13 +491,30 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
       if (failure) return await block('parked', `The must-pass checks still fail after ${cfg.limits.verify} fix attempts${task ? ` on task ${task.id}` : ''}, so no PR was opened.\n\n${failure}`);
       if (task) {
         results.push(`### ${subtaskSummary(task)}\n\n${built.summary}`);
-        await saveCheckpoint(repos, refs[i]);
+        if (refs[i]) await saveCheckpoint(repos, refs[i]);
       }
       for (const t of covers) await moveSubtask(t, 'done');
     }
     vars.task = '';
     const summary = results.length ? results.join('\n\n') : built.summary;
     if (!(await anyChanged(repos))) return await block('waiting', `No code changes were needed or made.\n\n${summary}`);
+
+    // --- The platform's checks on what would be pushed: CI definitions and credentials stop the card, the rest goes to
+    // the reviewer and the pull request. Run again before shipping: addressing the review changes the diff ---
+    const diffChecks = async () => {
+      const found = await Promise.all(
+        repos.map(async (r) => {
+          await fetchBranches(r.work, r.repo, [r.base]);
+          return checkDiff(r.work.dir, `refs/remotes/origin/${r.base}`, { planned: plan.files, tests: plan.tests, folder: r.role });
+        }),
+      );
+      const checked = { blocked: found.flatMap((f) => f.blocked), warnings: found.flatMap((f) => f.warnings) };
+      if (checked.blocked.length || checked.warnings.length) run.event('warn', 'Platform checks on the change', checked);
+      return checked;
+    };
+    let checked = await diffChecks();
+    if (checked.blocked.length) return await block('parked', refusedPush(checked.blocked));
+    vars.diffChecks = checksSection(checked.warnings);
 
     // --- Diff review by the independent reviewer; the lead fixes or disputes, bounded ---
     let notes: Finding[] = [];
@@ -509,8 +547,10 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
 
     // --- Ship ---
     run.stage('Ship');
-    // The minor findings left (manual checks included) reach the person who reviews the PR.
-    const body = `${summary}${criteriaTable(checks)}${notes.length ? `\n\n## Reviewer notes\n\n${formatFindings(notes)}` : ''}`;
+    checked = await diffChecks();
+    if (checked.blocked.length) return await block('parked', refusedPush(checked.blocked));
+    // The minor findings left (manual checks included) and the platform's checks reach the person who reviews the PR.
+    const body = [`${summary}${criteriaTable(checks)}`, notes.length && `## Reviewer notes\n\n${formatFindings(notes)}`, checksSection(checked.warnings)].filter(Boolean).join('\n\n');
     const urls: string[] = [];
     const prs: WatchedPr[] = [];
     // Before any push: a branch of that name holding someone else's commits stops the card, in every repository.
@@ -535,6 +575,7 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
     }
     return { status: 'done', summary: `${dryRun ? 'would open' : 'opened'} ${urls.join(', ')}: ${built.title}`, data: { prs } };
   } finally {
+    if (replay) await replay.evaluate(run, repos).catch((err) => run.event('warn', 'The golden evaluation failed', (err as Error).message));
     databases?.revoke();
     for (const r of repos) await removeCheckout(r.work).catch(() => {});
     await rm(workspace, { recursive: true, force: true });
@@ -542,6 +583,12 @@ async function work(run: Run, key: string, project: Project, dryRun: boolean, si
 }
 
 export class NeedsInput extends Error {}
+
+/** A code plan as the reviewer, the builder and the card read it: the plan, then the files and tests it declares. */
+const planText = (p: Plan) =>
+  [p.plan, p.files?.length && `**Files:** ${p.files.map((f) => `\`${f}\``).join(', ')}`, p.tests?.length && `**Tests:** ${p.tests.map((t) => `\`${t}\``).join(', ')}`]
+    .filter(Boolean)
+    .join('\n\n');
 
 /**
  * What the lead and the reviewers are told about the card's Markdown attachments, saved in `dir`, and about the
@@ -910,7 +957,7 @@ export async function foreignCommits(repo: string, base: string, branch: string)
 async function publish(run: Run, key: string, branch: string, r: RepoCheckout, title: string, body: string, dryRun: boolean): Promise<string> {
   const cfg = read('agents.developer');
   if (dryRun) return `${r.repo} (dry run)`;
-  await sh('git', ['push', '--force', 'origin', `HEAD:refs/heads/${branch}`], { cwd: r.work.dir });
+  await pushBranch(r.work, r.repo, branch, { force: true });
   // A card sent back for rework updates its existing PR instead of failing on a duplicate.
   const existing = await gh(['pr', 'list', '--repo', r.repo, '--head', branch, '--json', 'url', '-q', '.[0].url']);
   const url =

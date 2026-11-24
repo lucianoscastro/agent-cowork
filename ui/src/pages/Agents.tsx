@@ -205,6 +205,9 @@ function AgentSettings({ id, settings, reload }: { id: AgentId; settings: Settin
           <p className="small muted">{t('Lead')}</p>
           <ModelPicker value={developer.lead} onChange={(lead) => setDeveloper({ ...developer, lead })} settings={settings} />
           <div className="row fields">
+            <Field label="Plan model" hint="The lead's model for the plan alone, on the lead's provider. Empty: the lead's model.">
+              <ModelInput provider={developer.lead.provider} value={developer.planModel} onChange={(planModel) => setDeveloper({ ...developer, planModel })} />
+            </Field>
             <Field label="Coder subagent model" hint="Claude lead only.">
               <ModelInput provider={developer.lead.provider} value={developer.coderModel} onChange={(coderModel) => setDeveloper({ ...developer, coderModel })} />
             </Field>

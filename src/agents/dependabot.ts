@@ -1,7 +1,7 @@
 import { brainContext } from '../brain.ts';
 import { outputLanguage, projectOf, projectRepos, read } from '../config.ts';
 import { Items, sql } from '../db.ts';
-import { actionsLinks, failedLogTail, gh, ghJson } from '../integrations/github.ts';
+import { actionsLinks, failedLogTail, gh, ghJson, PEOPLE } from '../integrations/github.ts';
 import * as jira from '../integrations/jira.ts';
 import { runProvider } from '../providers/index.ts';
 import { withRun, type Run, type RunEnd } from '../runs.ts';
@@ -154,7 +154,6 @@ export async function pollDependabot(): Promise<void> {
   }
 }
 
-const PEOPLE = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
 /**
  * Who approved the PR's current commit on GitHub (a developer, the operator), not counting this agent's own

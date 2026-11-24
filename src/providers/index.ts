@@ -8,6 +8,7 @@ import { env } from '../env.ts';
 import type { ToolServer } from '../databases.ts';
 import type { Run } from '../runs.ts';
 import { run as sh } from '../sh.ts';
+import { runsUsage } from '../usage.ts';
 import { refreshUsage, runAgy } from './agy.ts';
 import { runClaude } from './claude.ts';
 import { refreshCodexLimits, runCodex } from './codex.ts';
@@ -60,25 +61,35 @@ export function startLimitRefresh(): void {
 }
 
 /**
- * Prepares each runtime's home on the persistent auth volume and links the resolved instructions and
- * skills where each runtime looks for them. HOME itself is a tmpfs, so links are recreated at startup.
+ * Readies Codex's or agy's home on the persistent auth volume before each call: the resolved instructions and skills
+ * linked where the runtime looks, and the user config it reads removed, so nothing an earlier call wrote there (a
+ * notify program, a hook, an MCP server, an extension) runs. Their logins stay. Claude gets a fresh config directory
+ * per call instead (claudeConfigDir).
  */
-export function prepareRuntimeHomes(): void {
+export function resetRuntimeHome(id: ProviderId): void {
   const link = (target: string, at: string) => {
     rmSync(at, { force: true });
     symlinkSync(target, at);
   };
-  const claudeHome = join(homedir(), '.claude');
-  mkdirSync(claudeHome, { recursive: true });
-  if (!existsSync(join(claudeHome, 'CLAUDE.md'))) link(asset('AGENTS.md').path, join(claudeHome, 'CLAUDE.md'));
-  if (!existsSync(join(claudeHome, 'skills'))) link(asset('skills').path, join(claudeHome, 'skills'));
+  if (id === 'codex') {
+    mkdirSync(homes.codex, { recursive: true, mode: 0o700 });
+    link(asset('AGENTS.md').path, join(homes.codex, 'AGENTS.md'));
+    link(asset('skills').path, join(homes.codex, 'skills'));
+    // Codex writes only project trust entries there; the platform passes its own settings with -c.
+    rmSync(join(homes.codex, 'config.toml'), { force: true });
+  }
+  if (id === 'agy') {
+    mkdirSync(join(homes.agy, 'antigravity-cli'), { recursive: true, mode: 0o700 });
+    link(asset('AGENTS.md').path, join(homes.agy, 'GEMINI.md'));
+    rmSync(join(homes.agy, 'settings.json'), { force: true });
+    rmSync(join(homes.agy, 'extensions'), { recursive: true, force: true });
+  }
+}
 
-  mkdirSync(homes.codex, { recursive: true, mode: 0o700 });
-  link(asset('AGENTS.md').path, join(homes.codex, 'AGENTS.md'));
-  link(asset('skills').path, join(homes.codex, 'skills'));
-
-  mkdirSync(join(homes.agy, 'antigravity-cli'), { recursive: true, mode: 0o700 });
-  link(asset('AGENTS.md').path, join(homes.agy, 'GEMINI.md'));
+/** Readies the runtime homes at startup; agy also reads `~/.gemini`, which HOME (a tmpfs) loses on each restart. */
+export function prepareRuntimeHomes(): void {
+  resetRuntimeHome('codex');
+  resetRuntimeHome('agy');
   const gemini = join(homedir(), '.gemini');
   if (!existsSync(gemini)) symlinkSync(homes.agy, gemini);
 }
@@ -173,7 +184,7 @@ export async function runProvider<T>(id: ProviderId, req: ProviderRequest): Prom
     try {
       return { ...(await callProvider<T>(p, { ...req, model: p === id ? req.model : '' })), provider: p };
     } catch (err) {
-      if (!limitPause((err as Error).message)) throw err;
+      if (err instanceof TokenLimitError || !limitPause((err as Error).message)) throw err;
       failure = err as Error;
     }
   }
@@ -186,6 +197,7 @@ async function callProvider<T>(id: ProviderId, req: ProviderRequest): Promise<Pr
   req.run.event('info', `${req.label}: ${id}${model ? ` (${model})` : ''}, ${req.mode}`);
   if (req.browser && id !== 'claude') throw new Error(`${req.label}: browser tools need Claude Code`);
   if (!req.browser && id === 'claude' && req.browserIfClaude) req = { ...req, browser: req.browserIfClaude };
+  resetRuntimeHome(id);
   const call = () =>
     id === 'claude' ? runClaude<T>({ ...req, model }) : id === 'codex' ? runCodex<T>({ ...req, model }) : runAgy<T>({ ...req, model });
   const guarded = () => (req.mode === 'read-only' ? guardReadOnly(req.run, req.label, req.cwd, call) : call());
@@ -199,8 +211,23 @@ async function callProvider<T>(id: ProviderId, req: ProviderRequest): Promise<Pr
     throw err;
   });
   req.run.event('usage', `${req.label}: usage`, { ...result.usage, provider: id, model: model ?? 'default', durationMs: Date.now() - start });
+  stopOverTokens(req.run.id, read('general').runTokens);
   return result;
 }
+
+/**
+ * Ends a run that used more tokens than the limit in General (0: no limit): it fails and goes to the Inbox.
+ * Exported for tests.
+ */
+// ponytail: checked after each call, so one long call can pass the limit; reading the usage Claude streams as it
+// goes would stop it mid-call.
+export function stopOverTokens(runId: number, limit: number): void {
+  const used = limit ? (runsUsage([runId]).get(runId) ?? 0) : 0;
+  if (used > limit) throw new TokenLimitError(`The run used ${used} tokens, over its limit of ${limit} (General): stopped.`);
+}
+
+/** A run over its token limit: never a provider's usage limit, so no other provider is tried. */
+export class TokenLimitError extends Error {}
 
 /** Git checkouts at `cwd` or one level below it (a workspace holds one checkout per role). */
 function checkouts(cwd: string): string[] {

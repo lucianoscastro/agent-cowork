@@ -94,7 +94,8 @@ export const outputLanguage = (): string => LANGUAGES[read('general').language] 
 
 export type Settings = {
   // fallback: a call that hits a usage limit moves on to the next provider (see fallbackOrder).
-  general: { language: Language; pollSeconds: number; fallback: boolean };
+  // runTokens: a run that uses more tokens stops and goes to the Inbox (0: no limit).
+  general: { language: Language; pollSeconds: number; fallback: boolean; runTokens: number };
   github: { gitName: string; gitEmail: string };
   // readyJql: the cards any agent may take from a board (e.g. a status); each agent adds its own label.
   // The card's way through the board, the same for every agent that takes cards (a transition or status name; empty
@@ -164,6 +165,8 @@ export type Settings = {
     draft: boolean;
     baseBranch: string;
     lead: ModelChoice;
+    // The lead's model for the plan alone ('' = the lead's model): a stronger one where judgment matters most.
+    planModel: string;
     coderModel: string;
     testerModel: string;
     // A Claude lead building a project with a React repository gets a headless browser that reaches only localhost.
@@ -187,7 +190,7 @@ export const NOTIFY_EVENTS = ['inbox', 'pr', 'limit', 'merged'] as const;
 export type NotifyEvent = (typeof NOTIFY_EVENTS)[number];
 
 export const DEFAULTS: Settings = {
-  general: { language: 'en-US', pollSeconds: 300, fallback: true },
+  general: { language: 'en-US', pollSeconds: 300, fallback: true, runTokens: 0 },
   github: { gitName: 'agentCowork', gitEmail: '' },
   jira: { url: '', email: '', readyJql: 'statusCategory != Done', startTransition: 'In Progress', blockedTransition: 'Blocked', reviewTransition: '', readyTransition: '', assign: true, worklog: false },
   notifications: { uiUrl: '', events: { inbox: true, pr: true, limit: true, merged: false } },
@@ -261,6 +264,7 @@ export const DEFAULTS: Settings = {
     draft: true,
     baseBranch: '',
     lead: { provider: 'claude', model: 'opus' },
+    planModel: '',
     coderModel: 'sonnet',
     testerModel: 'sonnet',
     browserCheck: true,
@@ -575,6 +579,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           language: oneOf(o, 'language', key, LANGUAGE_CODES),
           pollSeconds: int(o, 'pollSeconds', key, 30, 86_400),
           fallback: o.fallback === undefined ? true : bool(o, 'fallback', key),
+          runTokens: o.runTokens === undefined ? 0 : int(o, 'runTokens', key, 0, 1_000_000_000),
         };
       case 'github':
         return { gitName: str(o, 'gitName', key, { required: true, max: 100 }), gitEmail: str(o, 'gitEmail', key, { max: 200 }) };
@@ -691,6 +696,7 @@ function validate<K extends SectionKey>(key: K, value: unknown): Settings[K] {
           draft: bool(o, 'draft', key),
           baseBranch: str(o, 'baseBranch', key, { max: 200 }),
           lead: choice(o.lead, `${key}.lead`),
+          planModel: str(o, 'planModel', key, { max: 200 }),
           coderModel: str(o, 'coderModel', key, { max: 200 }),
           testerModel: str(o, 'testerModel', key, { max: 200 }),
           browserCheck: bool(o, 'browserCheck', key),

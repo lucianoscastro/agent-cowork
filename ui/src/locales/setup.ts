@@ -168,6 +168,8 @@ const translations = {
     'Language of agent output': 'Idioma da saída dos agentes',
     'Review comments, card questions and PR descriptions. Code and commits stay in English.': 'Comentários de revisão, perguntas nos cards e descrições de PR. Código e commits ficam em inglês.',
     'Poll every (seconds)': 'Consultar a cada (segundos)',
+    'Token limit per run': 'Limite de tokens por execução',
+    'A run that uses more stops after its call and goes to the Inbox. 0: no limit.': 'Uma execução que usar mais para depois da chamada e vai para o Inbox. 0: sem limite.',
     'Switch provider on a usage limit': 'Trocar de provedor ao bater limite de uso',
     "When a provider is paused or hits its usage limit, the call moves on to the next one (Claude Code, Codex, agy) with that provider's default model; a run fails only when all three are limited. Browser steps stay on Claude Code.":
       'Quando um provedor está pausado ou bate o limite de uso, a chamada passa para o próximo (Claude Code, Codex, agy) com o modelo padrão dele; um run só falha quando os três estão limitados. Etapas com navegador ficam no Claude Code.',
@@ -386,6 +388,8 @@ const translations = {
     'Language of agent output': 'Idioma de la salida de los agentes',
     'Review comments, card questions and PR descriptions. Code and commits stay in English.': 'Comentarios de revisión, preguntas en las tarjetas y descripciones de PR. El código y los commits se quedan en inglés.',
     'Poll every (seconds)': 'Consultar cada (segundos)',
+    'Token limit per run': 'Límite de tokens por ejecución',
+    'A run that uses more stops after its call and goes to the Inbox. 0: no limit.': 'Una ejecución que use más se detiene tras su llamada y va al Inbox. 0: sin límite.',
     'Switch provider on a usage limit': 'Cambiar de proveedor al alcanzar un límite de uso',
     "When a provider is paused or hits its usage limit, the call moves on to the next one (Claude Code, Codex, agy) with that provider's default model; a run fails only when all three are limited. Browser steps stay on Claude Code.":
       'Cuando un proveedor está en pausa o alcanza su límite de uso, la llamada pasa al siguiente (Claude Code, Codex, agy) con el modelo predeterminado de ese proveedor; una ejecución solo falla cuando los tres están limitados. Los pasos con navegador se quedan en Claude Code.',

@@ -9,6 +9,7 @@ type Summary = {
   byAgent: (Row & { agent: AgentId })[];
   byModel: (Row & { provider: string; model: string })[];
   byDay: (Row & { day: string })[];
+  outcomes: { provider: string; model: string; cards: number; merged: number; closed: number; tokens: number; tokensPerMerged: number | null }[];
   limits: Limits;
   accounts: Accounts;
 };
@@ -123,6 +124,7 @@ export function LimitsCard({ limits, accounts, onChange, compact }: { limits: Li
 }
 
 const tokens = (r: Row) => r.input + r.cache + r.output;
+const modelName = (r: { provider: string; model: string }) => `${PROVIDER_NAMES[r.provider as keyof typeof PROVIDER_NAMES] ?? r.provider} · ${r.model}`;
 
 function Tile({ label, row }: { label: string; row: Row }) {
   const t = useT();
@@ -194,11 +196,38 @@ export function Usage() {
         <Table rows={data.byAgent} first="Agent" name={(r) => AGENT_NAMES[r.agent] ?? r.agent} />
       </Card>
       <Card title="By model (30 days)">
-        <Table
-          rows={data.byModel}
-          first="Provider · model"
-          name={(r) => `${PROVIDER_NAMES[r.provider as keyof typeof PROVIDER_NAMES] ?? r.provider} · ${r.model}`}
-        />
+        <Table rows={data.byModel} first="Provider · model" name={modelName} />
+      </Card>
+      <Card title="Outcomes by model">
+        {data.outcomes.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>{t('Model')}</th>
+                <th className="num">{t('Cards')}</th>
+                <th className="num">{t('Merged')}</th>
+                <th className="num">{t('Closed')}</th>
+                <th className="num">{t('Tokens per merged card')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.outcomes.map((r) => (
+                <tr key={modelName(r)}>
+                  <td>{modelName(r)}</td>
+                  <td className="num">{r.cards}</td>
+                  <td className="num">{r.merged}</td>
+                  <td className="num">{r.closed}</td>
+                  <td className="num">
+                    <b>{formatTokens(r.tokensPerMerged ?? undefined)}</b>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <Empty>No card worked on yet.</Empty>
+        )}
+        <p className="hint">{t('A card counts for every model that worked on it; open cards are not counted as merged or closed.')}</p>
       </Card>
       <Card title="By day (14 days)">
         <Table rows={data.byDay} first="Day" name={(r) => new Date(`${r.day}T12:00:00Z`).toLocaleDateString(locale)} />

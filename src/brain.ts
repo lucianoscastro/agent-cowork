@@ -7,7 +7,7 @@ import { type ProviderId, read } from './config.ts';
 import { env } from './env.ts';
 import { runProvider } from './providers/index.ts';
 import type { Run, RunEnd } from './runs.ts';
-import { renderPrompt, withLock } from './sh.ts';
+import { renderPrompt, untrusted, withLock } from './sh.ts';
 
 /**
  * The project brain: an Obsidian-compatible vault of Markdown notes, one per registered project, shared by
@@ -37,17 +37,29 @@ const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 /** The note paths agents may write: lowercase kebab-case folders and files, at most three levels deep. */
 export const validNotePath = (path: string) => /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,2}\.md$/.test(path) && path !== 'index.md';
 
+/**
+ * Credentials by their own shape (provider token prefixes, AWS key ids, private keys): rare in code that holds none,
+ * so a diff's added lines are checked with these alone (checkDiff).
+ */
+export const CREDENTIAL_SHAPES = [
+  /\b(ghp|gho|ghs|github_pat|xox[abp]|sk|AKIA)[-_][A-Za-z0-9_-]{12,}/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+];
+/** Credentials or what may be one in code too (test fixtures, local URLs): a warning on a diff, never a block. */
+export const CREDENTIAL_HINTS = [
+  /[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i, // credentials in a URL
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./, // JWT
+];
+
 /** Credentials never go into the brain: a note that looks like one is refused. Exported for tests. */
 export function looksSecret(text: string): boolean {
   return [
     // Also inside variable names: DB_PASSWORD=..., AWS_SECRET_ACCESS_KEY=...
     /(?:\b|_)(password|passwd|pwd|secret|token|api[_-]?key|client[_-]?secret)[a-z_]*\s*[:=]\s*["']?[^\s"';,]{6,}/i,
     /\b(password|pwd)\s*=\s*[^;\s]{3,}\s*;/i, // connection strings: Password=...;
-    /[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i, // credentials in a URL
-    /\b(ghp|gho|ghs|github_pat|xox[abp]|sk|AKIA)[-_][A-Za-z0-9_-]{12,}/,
-    /\bAKIA[0-9A-Z]{16}\b/,
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-    /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./, // JWT
+    ...CREDENTIAL_SHAPES,
+    ...CREDENTIAL_HINTS,
   ].some((re) => re.test(text));
 }
 
@@ -127,7 +139,7 @@ export async function brainContext(project: string | undefined, workspace: strin
   const relevant: string[] = [];
   let used = 0;
   for (const n of searchNotes(notes, task)) {
-    const block = `<brain-note path="${workspace ? 'brain/' : ''}${n.path}">\n${n.body}\n</brain-note>`;
+    const block = `<brain-note path="${workspace ? 'brain/' : ''}${n.path}">\n${untrusted(n.body)}\n</brain-note>`;
     if (used + block.length > PROMPT_BUDGET) break;
     relevant.push(block);
     used += block.length;

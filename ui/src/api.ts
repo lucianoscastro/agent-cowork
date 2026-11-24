@@ -130,7 +130,7 @@ export const NOTIFY_EVENTS: { id: NotifyEvent; label: string }[] = [
 ];
 
 export type Sections = {
-  general: { language: 'en-US' | 'pt-BR' | 'es-ES'; pollSeconds: number; fallback: boolean };
+  general: { language: 'en-US' | 'pt-BR' | 'es-ES'; pollSeconds: number; fallback: boolean; runTokens: number };
   github: { gitName: string; gitEmail: string };
   /** readyJql: the cards any agent may take from a board; each agent adds its own label. */
   jira: { url: string; email: string; readyJql: string; startTransition: string; blockedTransition: string; reviewTransition: string; readyTransition: string; assign: boolean; worklog: boolean };
@@ -186,6 +186,7 @@ export type Sections = {
     draft: boolean;
     baseBranch: string;
     lead: ModelChoice;
+    planModel: string;
     coderModel: string;
     testerModel: string;
     browserCheck: boolean;

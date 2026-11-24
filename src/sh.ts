@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { asset } from './assets.ts';
 import { env } from './env.ts';
@@ -29,10 +30,111 @@ export function log(...args: unknown[]): void {
   if (recentLogs.length > RECENT_LOG_LINES) recentLogs.shift();
 }
 
+/**
+ * What the platform's own git runs with in a checkout an agent wrote to: that checkout's hooks, fsmonitor, credential
+ * helpers, `ext::` remotes and signing program never run. Exported for tests.
+ */
+export const GIT_HARDENING = [
+  '-c', 'core.hooksPath=/dev/null',
+  '-c', 'core.fsmonitor=false',
+  '-c', 'credential.helper=',
+  '-c', 'credential.helper=!gh auth git-credential',
+  '-c', 'protocol.ext.allow=never',
+  '-c', 'commit.gpgSign=false',
+];
+const GIT_NETWORK = new Set(['clone', 'fetch', 'push', 'ls-remote']);
+/** What gh and network git need from this process's environment besides safeEnv(): a proxy and its certificates. */
+const NETWORK_ENV = /^(https?_proxy|no_proxy|all_proxy|ssl_cert_file|ssl_cert_dir|git_ssl_cainfo)$/i;
+let githubToken: string | undefined;
+/** The GitHub token, held here and never in the process environment, which every child would inherit. */
+export const setGithubToken = (token: string | undefined) => void (githubToken = token);
+
+/**
+ * The arguments and environment of the platform's own `gh` and `git`: only gh and the git commands that talk to GitHub
+ * get the token, git ignores the global config (on the agents' writable HOME) and the hardening above. A caller's own
+ * environment is kept. Exported for tests.
+ */
+// ponytail: agents run as the platform's own Linux user, so filters, textconv and merge drivers an agent writes into a
+// checkout's config still run on local git commands (without the token). Running agents as another user ends that.
+export function platformCommand(cmd: string, args: string[], env?: NodeJS.ProcessEnv): { args: string[]; env?: NodeJS.ProcessEnv } {
+  if (cmd !== 'git' && cmd !== 'gh') return { args, env };
+  const network = cmd === 'gh' || GIT_NETWORK.has(gitSubcommand(args) ?? '');
+  return {
+    args: cmd === 'git' ? [...GIT_HARDENING, ...args] : args,
+    env: env ?? gitEnv(network),
+  };
+}
+
+/** The environment of the platform's own git and gh; with `network`, a proxy's settings and the GitHub token. */
+const gitEnv = (network: boolean) =>
+  safeEnv({
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+    ...(network ? Object.fromEntries(Object.entries(process.env).filter(([k]) => NETWORK_ENV.test(k))) : {}),
+    ...(network && githubToken ? { GH_TOKEN: githubToken } : {}),
+  });
+
+/** A git command line's subcommand, past `-C <dir>`, `-c <key=value>` and options written `--name=value`. */
+function gitSubcommand(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-C' || args[i] === '-c') i++;
+    else if (!args[i].startsWith('-')) return args[i];
+  }
+  return undefined;
+}
+
+/** A repository's GitHub URL: the platform fetches from and pushes to it itself, whatever a checkout's remotes say. */
+const githubUrl = (repo: string) => `https://github.com/${repo}.git`;
+
+/**
+ * Runs `fn` with a bare repository only the platform wrote, which borrows the objects of the repository at `cache`
+ * (alternates): a command holding the GitHub token never reads a checkout's config, which an agent can write (a proxy
+ * that turns TLS checks off, a credential helper, an askpass program, a pushurl).
+ */
+async function cleanRepo<T>(cache: string, fn: (gitDir: string) => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(join(tmpdir(), 'agentcowork-git-'));
+  try {
+    await run('git', ['init', '--bare', '--quiet', dir]);
+    await writeFile(join(dir, 'objects', 'info', 'alternates'), `${resolve(cache, 'objects')}\n`);
+    return await fn(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Fetches refspecs (`+src:dst`) from `url` into the bare repository at `cache`: downloaded with the token into a clean
+ * repository (only what `cache` lacks: its refs count as had), then copied in from there without it. Exported for tests.
+ */
+export function fetchInto(cache: string, url: string, refspecs: string[]): Promise<void> {
+  return cleanRepo(cache, async (clean) => {
+    await run('git', [`--git-dir=${clean}`, 'fetch', '--no-tags', '--quiet', url, ...refspecs]);
+    const fetched = refspecs.map((r) => r.slice(r.indexOf(':') + 1)).map((ref) => `+${ref}:${ref}`);
+    await run('git', ['-C', cache, 'fetch', '--no-tags', '--quiet', clean, ...fetched], { env: gitEnv(false) });
+  });
+}
+
+/** Pushes `sha` from the bare repository at `cache` to a branch at `url`, from a clean repository. Exported for tests. */
+export function pushFrom(cache: string, url: string, sha: string, branch: string, { force = false } = {}): Promise<string> {
+  if (!/^[0-9a-f]{40,64}$/.test(sha)) throw new Error(`Not a commit to push: ${sha.slice(0, 80)}`);
+  return cleanRepo(cache, (clean) => run('git', [`--git-dir=${clean}`, 'push', '--quiet', ...(force ? ['--force'] : []), url, `${sha}:refs/heads/${branch}`]));
+}
+
+/** Pushes a checkout's HEAD to a branch of its repository on GitHub. */
+export async function pushBranch(work: Checkout, repo: string, branch: string, opts: { force?: boolean } = {}): Promise<void> {
+  await pushFrom(work.cache, githubUrl(repo), await run('git', ['rev-parse', 'HEAD'], { cwd: work.dir }), branch, opts);
+}
+
+/** Fetches branches straight from GitHub into a checkout's `origin/` refs, so a check reads them as GitHub has them. */
+export function fetchBranches(work: Checkout, repo: string, branches: string[]): Promise<void> {
+  return withLock(work.cache, () => fetchInto(work.cache, githubUrl(repo), branches.map((b) => `+refs/heads/${b}:refs/remotes/origin/${b}`)));
+}
+
 export async function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<string> {
-  const pending = execFileAsync(cmd, args, {
+  const platform = platformCommand(cmd, args, opts.env);
+  const pending = execFileAsync(cmd, platform.args, {
     cwd: opts.cwd,
-    env: opts.env,
+    env: platform.env,
     timeout: opts.timeoutMs,
     signal: opts.signal,
     maxBuffer: 64 * 1024 * 1024,
@@ -116,10 +218,10 @@ export function checkout(
         'clone', '--bare',
         '--config', 'credential.helper=',
         '--config', 'credential.helper=!gh auth git-credential',
-        `https://github.com/${repo}.git`, cache,
+        githubUrl(repo), cache,
       ]);
     }
-    await run('git', ['-C', cache, 'fetch', 'origin', ...refspecs]);
+    await fetchInto(cache, githubUrl(repo), refspecs);
     const dir = opts.dir ?? join(env.paths.work, 'worktrees', `${basename(cache)}-${randomUUID().slice(0, 8)}`);
     const target = opts.branch ? ['-B', opts.branch] : ['--detach'];
     if (opts.branch) await freeBranch(cache, opts.branch);

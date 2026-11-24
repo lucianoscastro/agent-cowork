@@ -43,6 +43,9 @@ export function General() {
           <Field label="Poll every (seconds)">
             <Num value={general.pollSeconds} min={30} onChange={(pollSeconds) => setGeneral({ ...general, pollSeconds })} />
           </Field>
+          <Field label="Token limit per run" hint="A run that uses more stops after its call and goes to the Inbox. 0: no limit.">
+            <Num value={general.runTokens} min={0} onChange={(runTokens) => setGeneral({ ...general, runTokens })} />
+          </Field>
         </div>
         <Toggle label="Switch provider on a usage limit" checked={general.fallback} onChange={(fallback) => setGeneral({ ...general, fallback })} />
         <p className="hint">

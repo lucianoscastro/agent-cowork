@@ -7,7 +7,8 @@ import { gh } from '../integrations/github.ts';
 import { notify } from '../notify.ts';
 import { runProvider } from '../providers/index.ts';
 import { type Run, type RunEnd, withRun } from '../runs.ts';
-import { checkout, forEachLimit, log, removeCheckout, renderPrompt, run as sh } from '../sh.ts';
+import { checkout, fetchBranches, forEachLimit, log, pushBranch, removeCheckout, renderPrompt, run as sh } from '../sh.ts';
+import { checkDiff, refusedPush } from './diff-policy.ts';
 import { foreignCommits } from './developer.ts';
 import { takeForce } from './status.ts';
 
@@ -152,7 +153,11 @@ async function document(run: Run, { repo, base, sha, since }: { repo: string; ba
     run.stage('Pull request');
     await sh('git', ['add', '--', folder], { cwd });
     await sh('git', ['commit', '-m', `docs: ${since && exists ? 'update' : 'add'} architecture and business-rule docs`], { cwd });
-    await sh('git', ['push', '--force', 'origin', `HEAD:refs/heads/${BRANCH}`], { cwd });
+    await fetchBranches(work, repo, [base]);
+    const checked = await checkDiff(cwd, `refs/remotes/origin/${base}`);
+    if (checked.blocked.length || checked.warnings.length) run.event('warn', 'Platform checks on the docs', checked);
+    if (checked.blocked.length) return { status: 'waiting', summary: refusedPush(checked.blocked) };
+    await pushBranch(work, repo, BRANCH, { force: true });
     const body = `${output.summary}\n\nWritten from \`${base}@${sha.slice(0, 12)}\`. Files:\n${docs.map((f) => `- \`${f}\``).join('\n')}${FOOTER}`;
     // An open docs PR is updated (the branch was force-pushed) instead of a second one being opened.
     const existing = await gh(['pr', 'list', '--repo', repo, '--head', BRANCH, '--json', 'url', '-q', '.[0].url']);

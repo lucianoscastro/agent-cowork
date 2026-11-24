@@ -1,20 +1,23 @@
 import { read, SECRETS } from '../config.ts';
 import { getSecret } from '../db.ts';
-import { run, type RunOptions } from '../sh.ts';
+import { run, type RunOptions, setGithubToken } from '../sh.ts';
 
 /**
- * Puts the GitHub token and git identity in this process's environment, where only `gh` and `git`
- * (run with the default environment) see them. Runtimes and verify commands get safeEnv() instead.
+ * Hands the GitHub token to the platform's own `gh` and network `git` (see platformCommand), and puts the git identity
+ * in this process's environment. Runtimes and verify commands get safeEnv() instead.
  */
 export function applyGithubEnv(): boolean {
   const token = getSecret(SECRETS.githubToken);
   const { gitName, gitEmail } = read('github');
-  if (token) process.env.GH_TOKEN = token;
-  else delete process.env.GH_TOKEN;
+  setGithubToken(token);
+  delete process.env.GH_TOKEN;
   process.env.GIT_AUTHOR_NAME = process.env.GIT_COMMITTER_NAME = gitName;
   process.env.GIT_AUTHOR_EMAIL = process.env.GIT_COMMITTER_EMAIL = gitEmail || `${gitName.replace(/\W+/g, '-')}@users.noreply.github.com`;
   return Boolean(token);
 }
+
+/** A comment author's association that makes them the repository's own people: whose words may steer an agent. */
+export const PEOPLE = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
 export function gh(args: string[], opts: RunOptions = {}): Promise<string> {
   return run('gh', args, opts);
@@ -31,8 +34,9 @@ export async function testGithub(): Promise<string> {
   const login = /"login":\s*"([^"]+)"/.exec(res)?.[1] ?? 'unknown';
   // Classic and OAuth tokens list their scopes; fine-grained tokens don't (their Workflows permission can't be read here).
   const scopes = /^x-oauth-scopes:(.*)$/im.exec(res)?.[1];
-  return scopes !== undefined && !scopes.split(',').map((x) => x.trim()).includes('workflow')
-    ? `${login} · missing the "workflow" scope: pull requests that change .github/workflows can't be pushed`
+  // The platform never pushes CI definitions (see checkDiff); a token without the scope makes that a guarantee too.
+  return scopes !== undefined && scopes.split(',').map((x) => x.trim()).includes('workflow')
+    ? `${login} · has the "workflow" scope: agents never push .github/workflows, so a token without it is safer`
     : login;
 }
 
