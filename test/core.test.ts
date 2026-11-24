@@ -2065,6 +2065,30 @@ test('shared folders: the agents\' group gets folders (setgid) and files, once',
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('dependabot: every conflicting PR is rebased once per commit, and goes to a person when Dependabot does not', async () => {
+  const { resolveConflict } = await import('../src/agents/dependabot.ts');
+  const items = new Items('dependabot', true);
+  const pr = { number: 7, url: 'https://github.com/o/r/pull/7', title: 'Bump x from 1.0.0 to 2.0.0', body: '', headRefOid: 'abc123', headRefName: 'dependabot/npm_and_yarn/x-2.0.0', baseRefName: 'main', createdAt: '2026-01-01T00:00:00Z', statusCheckRollup: [], mergeable: 'CONFLICTING' as const };
+  const key = `${pr.url}@${pr.headRefOid}`;
+  const runs = () => (sql().prepare("SELECT COUNT(*) AS n FROM runs WHERE item = 'o/r#7'").get() as { n: number }).n;
+  // Parked for a person (a major update), it still gets its rebase.
+  items.human(key, { reason: 'major update' });
+  await resolveConflict(items, 'o/r', pr, key, false, true);
+  assert.equal(runs(), 1);
+  assert.match(String(items.get(`rebase:${key}`)?.data.summary), /would ask Dependabot to rebase/);
+  await resolveConflict(items, 'o/r', pr, key, false, true);
+  assert.equal(runs(), 1, 'asked once per commit');
+  // An hour later, the same commit, not parked: Dependabot refused, so a person resolves it, once.
+  items.forget(key);
+  sql().prepare('UPDATE items SET updated_at = ? WHERE key = ?').run(new Date(Date.now() - 2 * 3_600_000).toISOString(), `dry:dependabot:rebase:${key}`);
+  await resolveConflict(items, 'o/r', pr, key, false, true);
+  assert.equal(runs(), 2);
+  assert.equal(items.get(key)?.status, 'human');
+  assert.match(String(items.get(key)?.data.reason), /did not rebase it an hour after/);
+  await resolveConflict(items, 'o/r', pr, key, false, true);
+  assert.equal(runs(), 2);
+});
+
 test("the platform's git in a checkout uses the checkout's own git directory, whatever its .git file says", async () => {
   const { addWorktree, removeCheckout } = await import('../src/sh.ts');
   const root = mkdtempSync(join(tmpdir(), 'acw-wt-'));

@@ -30,6 +30,8 @@ export type UpdateType = 'patch' | 'minor' | 'major';
 
 /** How long a new PR may have no checks before that counts as "this repository runs none". */
 const NO_CHECKS_GRACE_MS = 60 * 60_000;
+/** How long Dependabot gets to rebase a conflicting PR before a person is asked to resolve the conflict. */
+const REBASE_GRACE_MS = 60 * 60_000;
 const DAY_MS = 86_400_000;
 const FOOTER = '\n\n---\n🤖 agentCowork Dependabot agent';
 const SCHEMA = {
@@ -140,6 +142,7 @@ export async function pollDependabot(): Promise<void> {
     }
     await forEachLimit(prs, cfg.concurrency, async (pr) => {
       const key = keyOf(pr);
+      if (pr.mergeable === 'CONFLICTING') return resolveConflict(items, repo, pr, key, force, dryRun);
       if (!force && items.skip(key)) return;
       const gate = await precheck(repo, pr, cfg.cooldownDays, cfg.allowedUpdates);
       if (gate.wait) return; // cooldown or CI still running: look again on a later poll
@@ -154,6 +157,43 @@ export async function pollDependabot(): Promise<void> {
   }
 }
 
+
+/**
+ * Any open PR that conflicts with its base, whatever else holds it (the cooldown, the policy, a person's review):
+ * Dependabot is asked to rebase it, once per commit, and its new commit is assessed from scratch. The same commit an
+ * hour later means Dependabot refused (it does not rebase a PR someone else pushed to): a person resolves it. Exported
+ * for tests.
+ */
+export async function resolveConflict(items: Items, repo: string, pr: DepPr, key: string, force: boolean, dryRun: boolean): Promise<void> {
+  const askedKey = `rebase:${pr.url}@${pr.headRefOid}`;
+  const asked = items.get(askedKey);
+  const refused = asked && !force && Date.now() - Date.parse(asked.updatedAt) > REBASE_GRACE_MS;
+  if (asked && !force && (!refused || items.skip(key))) return;
+  const reason = refused
+    ? `The PR conflicts with ${pr.baseRefName}, and Dependabot did not rebase it an hour after it was asked to (it refuses when someone else pushed to the PR). A person must resolve the conflict, or comment \`@dependabot recreate\`.`
+    : 'The PR conflicts with its base branch.';
+  const end = await withRun({ agent: 'dependabot', item: `${repo}#${pr.number}`, url: pr.url, title: pr.title, dryRun }, (run) =>
+    refused ? toHuman(run, pr, reason, dryRun) : askRebase(run, pr, reason, dryRun),
+  );
+  if (end.status === 'waiting') items.human(key, { url: pr.url, title: pr.title, reason: end.summary });
+  else if (end.status === 'done') items.done(askedKey, { summary: end.summary });
+  else items.fail(askedKey, end.summary ?? end.status);
+}
+
+/** Hands the PR to a person: a comment on it (live) and the Inbox. */
+async function toHuman(run: Run, pr: DepPr, reason: string, dryRun: boolean): Promise<RunEnd> {
+  run.event('artifact', `Needs a human: ${reason}`);
+  if (!dryRun) await gh(['pr', 'comment', pr.url, '--body', `${reason}${FOOTER}`]);
+  return { status: 'waiting', summary: reason };
+}
+
+/** Dependabot reads only a comment that is exactly its command. Its new commit is a new item, assessed from scratch. */
+async function askRebase(run: Run, pr: DepPr, reason: string, dryRun: boolean): Promise<RunEnd> {
+  run.event('artifact', `Asked Dependabot to rebase: ${reason}`);
+  if (dryRun) return { status: 'done', summary: `would ask Dependabot to rebase: ${reason}` };
+  await gh(['pr', 'comment', pr.url, '--body', '@dependabot rebase']);
+  return { status: 'done', summary: `asked Dependabot to rebase: ${reason}` };
+}
 
 /**
  * Who approved the PR's current commit on GitHub (a developer, the operator), not counting this agent's own
@@ -184,8 +224,6 @@ async function precheck(repo: string, pr: DepPr, cooldownDays: number, allowed: 
   }
   const released = await Promise.all(bumps.map(async (b) => (await releaseDate(pr.headRefName, b.pkg, b.to)) ?? pr.createdAt));
   if (released.some((at) => Date.now() - Date.parse(at) < cooldownDays * DAY_MS)) return { wait: true };
-  // Dependabot resolves its own conflicts when asked; the rebased commit is assessed from scratch.
-  if (pr.mergeable === 'CONFLICTING') return { rebase: 'The PR conflicts with its base branch.' };
   // No checks at all is not a pass: CI may not have started yet, or the repository has none.
   if (!pr.statusCheckRollup?.length) {
     return Date.now() - Date.parse(pr.createdAt) < NO_CHECKS_GRACE_MS ? { wait: true } : { human: 'No CI checks ran on this PR: a human must review it.' };
@@ -204,23 +242,13 @@ async function precheck(repo: string, pr: DepPr, cooldownDays: number, allowed: 
 
 async function handle(run: Run, repo: string, pr: DepPr, gate: Gate, dryRun: boolean): Promise<RunEnd> {
   const cfg = read('agents.dependabot');
-  const toHuman = async (reason: string): Promise<RunEnd> => {
-    run.event('artifact', `Needs a human: ${reason}`);
-    if (!dryRun) await gh(['pr', 'comment', pr.url, '--body', `${reason}${FOOTER}`]);
-    return { status: 'waiting', summary: reason };
-  };
-  // Dependabot reads only a comment that is exactly its command. Its new commit is a new item, assessed from scratch.
-  const askRebase = async (reason: string): Promise<RunEnd> => {
-    run.event('artifact', `Asked Dependabot to rebase: ${reason}`);
-    if (dryRun) return { status: 'done', summary: `would ask Dependabot to rebase: ${reason}` };
-    await gh(['pr', 'comment', pr.url, '--body', '@dependabot rebase']);
-    return { status: 'done', summary: `asked Dependabot to rebase: ${reason}` };
-  };
-  if (gate.human) return toHuman(gate.human);
-  if (gate.rebase) return askRebase(gate.rebase);
+  const human = (reason: string) => toHuman(run, pr, reason, dryRun);
+  const rebase = (reason: string) => askRebase(run, pr, reason, dryRun);
+  if (gate.human) return human(gate.human);
+  if (gate.rebase) return rebase(gate.rebase);
   if (gate.ciFailing) {
     const card = cfg.failingCiCard ? await openFixCard(run, repo, pr, gate.bumps!, gate.ciFailing, dryRun) : undefined;
-    return card ?? toHuman(`${gate.ciFailing} A person must fix it.`);
+    return card ?? human(`${gate.ciFailing} A person must fix it.`);
   }
   const bumps = gate.bumps!;
   const worst = bumps.map((b) => updateType(b.from, b.to)).sort((a, b) => RANK[b] - RANK[a])[0];
@@ -233,10 +261,10 @@ async function handle(run: Run, repo: string, pr: DepPr, gate: Gate, dryRun: boo
   );
   try {
     const commands = verifyCommandsFor(repo);
-    if (!commands?.length) return toHuman(`${repo} has no verify commands (Projects, or the stack's defaults in General): nothing proves the update builds.`);
+    if (!commands?.length) return human(`${repo} has no verify commands (Projects, or the stack's defaults in General): nothing proves the update builds.`);
     run.stage('Verify');
     const failure = await runVerify(run, work.dir, repo, commands);
-    if (failure) return toHuman(`Verification failed:\n${failure}`);
+    if (failure) return human(`Verification failed:\n${failure}`);
 
     run.stage('Assess');
     const project = projectOf(repo);
@@ -267,7 +295,7 @@ async function handle(run: Run, repo: string, pr: DepPr, gate: Gate, dryRun: boo
     });
     run.event('artifact', `Assessment: ${output.decision}`, output);
     if (output.decision !== 'merge' || output.risks.length) {
-      return toHuman(`${output.summary}\n\n${output.risks.map((r) => `- ${r}`).join('\n')}`);
+      return human(`${output.summary}\n\n${output.risks.map((r) => `- ${r}`).join('\n')}`);
     }
     if (dryRun) return { status: 'done', summary: `would approve and ${cfg.mergeMethod}-merge: ${output.summary}` };
 
@@ -278,8 +306,8 @@ async function handle(run: Run, repo: string, pr: DepPr, gate: Gate, dryRun: boo
     } catch (err) {
       const message = (err as Error).message;
       // The base moved between the check and the merge: let Dependabot rebase instead of asking a person.
-      if (/not mergeable|cannot be cleanly created|conflict/i.test(message)) return askRebase('Approved, but the merge hit a conflict with the base branch.');
-      return toHuman(`Approved, but the merge was refused: ${message.slice(0, 300)}`);
+      if (/not mergeable|cannot be cleanly created|conflict/i.test(message)) return rebase('Approved, but the merge hit a conflict with the base branch.');
+      return human(`Approved, but the merge was refused: ${message.slice(0, 300)}`);
     }
     run.event('artifact', `Merged with ${cfg.mergeMethod}`);
     notify('merged', { title: `Dependabot merged ${repo}#${pr.number}`, text: `${pr.title}: ${output.summary}`, url: pr.url, agent: 'dependabot' });
