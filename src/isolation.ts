@@ -164,11 +164,12 @@ export function shareTree(dir: string, gid: number): void {
 }
 
 /**
- * Readies the data folders at start: the platform's own closed to other users, the runtimes' logins, the checkouts and
- * the package caches open to the agents' group. New files are group-writable (umask), so both users can change them.
- * The repository caches stay the platform's: agents read them through their checkouts but cannot write their config.
+ * Readies the data folders at start: the platform's own closed to other users, the checkouts and the package caches
+ * open to the agents' group. New files are group-writable (umask), so both users can change them. The runtimes' logins
+ * belong to the agents' user (entrypoint.sh). The repository caches stay the platform's: agents read them through their
+ * checkouts but cannot write their config.
  */
-export function prepareIsolation(runtimeHomes: string[]): void {
+export function prepareIsolation(): void {
   if (!AGENT) {
     log(`Agents run as the platform's own user: ${isolationOff}`);
     return;
@@ -188,7 +189,7 @@ export function prepareIsolation(runtimeHomes: string[]): void {
     });
   }
   attempt(`opening ${env.paths.auth}`, () => (chownSync(env.paths.auth, -1, AGENT.gid), chmodSync(env.paths.auth, 0o750)));
-  for (const dir of [...runtimeHomes, ...['worktrees', 'cache', 'brain-runs'].map((d) => join(env.paths.work, d))]) {
+  for (const dir of ['worktrees', 'cache', 'brain-runs'].map((d) => join(env.paths.work, d))) {
     attempt(`sharing ${dir}`, () => shareTree(dir, AGENT.gid));
   }
   log(`Agents run as their own user (uid ${AGENT.uid})`);

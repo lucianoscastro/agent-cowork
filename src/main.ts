@@ -5,7 +5,7 @@ import { startEgress } from './egress.ts';
 import { assertBootstrap, env } from './env.ts';
 import { applyGithubEnv } from './integrations/github.ts';
 import { killLeftoversWhenIdle, prepareIsolation } from './isolation.ts';
-import { homes, prepareRuntimeHomes, startLimitRefresh } from './providers/index.ts';
+import { prepareRuntimeHomes, startLimitRefresh } from './providers/index.ts';
 import { closeOrphanRuns } from './runs.ts';
 import { startScheduler } from './scheduler.ts';
 import { notifyInbox } from './notify.ts';
@@ -14,7 +14,7 @@ import { log } from './sh.ts';
 
 assertBootstrap();
 for (const dir of Object.values(env.paths)) mkdirSync(dir, { recursive: true });
-prepareIsolation([homes.codex, homes.agy]);
+prepareIsolation();
 openDb(env.paths.db, env.secretKey);
 onInbox(notifyInbox);
 closeOrphanRuns();

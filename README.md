@@ -108,7 +108,7 @@ Only bootstrap settings live in the env file. Everything else is stored in the d
 | `/backups` (bind) | Daily online backups of `db`, `auth` and the brains, keeping 7 days | — |
 | `/overrides` (bind, read-only, optional) | Replacements for the shipped instructions, skills and prompts | — |
 
-An older compose file (no `user: root` and `cap_add`) still starts, as `node`: agents then share the platform's user, and no firewall holds them to the network proxy (tools that use the proxy still meet its list; a program that ignores it reaches any host). **Setup → General → Network** says so. Copy the hardening lines of [`compose.example.yaml`](compose.example.yaml) to isolate them. On the first start with them, the platform opens the checkouts, the package caches and the runtime logins to the agents' group (uid 1001) and closes its own folders to everyone else.
+An older compose file (no `user: root` and `cap_add`) still starts, as `node`: agents then share the platform's user, and no firewall holds them to the network proxy (tools that use the proxy still meet its list; a program that ignores it reaches any host). **Setup → General → Network** says so. Copy the hardening lines of [`compose.example.yaml`](compose.example.yaml) to isolate them. On the first start with them, the platform opens the checkouts and the package caches to the agents' group (uid 1001), hands the runtime logins to the agents' user, and closes its own folders to everyone else.
 
 ## Instructions, skills and prompts
 

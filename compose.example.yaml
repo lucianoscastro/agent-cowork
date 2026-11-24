@@ -11,11 +11,12 @@ x-agent: &agent
   security_opt: ['no-new-privileges:true']
   # Starts as root only to isolate the agents (entrypoint.sh), then runs as node. Agents run as their own user, with no
   # capability: SETUID and SETGID let the platform switch to that user, KILL stop its processes, DAC_OVERRIDE read and
-  # remove what it writes; NET_ADMIN sets the firewall that holds agents to the platform's network proxy, at start only.
+  # remove what it writes; at start only, CHOWN hands the runtimes' logins to that user and NET_ADMIN sets the firewall
+  # that holds agents to the platform's network proxy.
   # Without these lines the container runs as node and agents share its user (the UI says so).
   user: root
   cap_drop: [ALL]
-  cap_add: [SETUID, SETGID, KILL, DAC_OVERRIDE, NET_ADMIN]
+  cap_add: [SETUID, SETGID, KILL, DAC_OVERRIDE, CHOWN, NET_ADMIN]
 
 # Shipped defaults (instructions, skills, prompts) are used unless you mount replacements under /overrides,
 # read-only, in a service's volumes. The admin UI shows which ones are custom. For example:

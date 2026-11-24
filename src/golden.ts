@@ -21,7 +21,7 @@ import { startEgress } from './egress.ts';
 import { assertBootstrap, env } from './env.ts';
 import { applyGithubEnv, ghJson } from './integrations/github.ts';
 import { prepareIsolation } from './isolation.ts';
-import { homes, prepareRuntimeHomes } from './providers/index.ts';
+import { prepareRuntimeHomes } from './providers/index.ts';
 import { getRun, type Run, withRun } from './runs.ts';
 import { run as sh } from './sh.ts';
 import { runsUsage } from './usage.ts';
@@ -43,7 +43,7 @@ if (!args.length) {
 }
 
 assertBootstrap();
-prepareIsolation([homes.codex, homes.agy]);
+prepareIsolation();
 openDb(env.paths.db, env.secretKey);
 prepareRuntimeHomes();
 applyGithubEnv();
